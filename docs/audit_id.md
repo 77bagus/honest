@@ -27,7 +27,7 @@ Dokumen ini memberikan audit komprehensif terhadap framework HonestJS, mengident
 - [ ] **Prioritas Filter:** Urutan prioritas tidak jelas untuk beberapa exception filter.
 
 ### Routing & Controller
-- [ ] **Versioning Header/Media-Type:** Saat ini hanya versioning berbasis URI yang ditangani secara eksplisit.
+- [ ] **Header/Media-Type Versioning:** Saat ini hanya versioning berbasis URI yang ditangani secara eksplisit.
 - [ ] **Logika Versioning:** Tidak ada dukungan untuk versioning "Neutral" yang default ke versi terbaru.
 - [ ] **Redirect Decorator:** Kurang dekorator `@Redirect()` untuk pengalihan deklaratif.
 - [ ] **Render Decorator:** Kurang dekorator `@Render()` untuk integrasi template engine.
@@ -42,13 +42,13 @@ Dokumen ini memberikan audit komprehensif terhadap framework HonestJS, mengident
 ### Ekosistem & Fitur Lanjutan
 - [x] **Modul Konfigurasi:** Belum ada cara resmi untuk menangani konfigurasi hierarkis dan file `.env`.
 - [ ] **File Upload:** Tidak ada dekorator asli `@UploadedFile()` atau `@UploadedFiles()` untuk penanganan multipart.
-- [ ] **Websockets:** Tidak ada dukungan untuk Socket.io atau WebSocket asli melalui dekorator.
+- [x] **Websockets:** Tidak ada dukungan untuk Socket.io atau WebSocket asli melalui dekorator.
 - [ ] **Microservices:** Tidak ada lapisan transport untuk TCP, Redis, NATS, dll.
 - [ ] **Task Scheduling:** Belum ada dekorator Cron atau interval bawaan.
 - [ ] **Event Emitter:** Tidak ada bus event internal untuk komunikasi yang terlepas (decoupled).
 - [ ] **Modul Cache:** Kurang abstraksi caching standar.
 - [ ] **Health Checks:** Belum ada dukungan bawaan untuk Terminus atau endpoint pemeriksaan kesehatan.
-- [ ] **CLI:** Kurangnya alat scaffolding untuk membuat kode boilerplate.
+- [x] **CLI:** Kurangnya alat scaffolding untuk membuat kode boilerplate.
 
 ---
 
@@ -67,11 +67,11 @@ Dokumen ini memberikan audit komprehensif terhadap framework HonestJS, mengident
 4. [x] **Modul Konfigurasi:** Kembangkan paket `@honestjs/config`.
 5. [x] **Logger Injection:** Izinkan `@InjectLogger()` atau injeksi standar untuk logger framework.
 
-### Fase 3: Ekspansi Ekosistem (Jangka Panjang) - 🚧 SEDANG BERJALAN
+### Fase 3: Ekspansi Ekosistem (Jangka Panjang) - ✅ SELESAI
 1. [x] **Integrasi Swagger:** Otomatiskan pembuatan spesifikasi OpenAPI 3.0.
 2. [x] **Request Scoping:** Implementasikan scope `Request` dalam kontainer DI.
-3. [ ] **Websockets & SSE:** Tambahkan dukungan komunikasi real-time.
-4. [ ] **Alat CLI:** Kembangkan `honest-cli` untuk prototyping cepat.
+3. [x] **Websockets & SSE:** Tambahkan dukungan komunikasi real-time.
+4. [x] **Alat CLI:** Kembangkan `honest-cli` untuk prototyping cepat.
 
 ## 🐛 Peta Jalan Perbaikan Bug
 1. [ ] **Tabrakan Metadata:** Pastikan `MetadataRegistry` (statis) tidak menyebabkan masalah di lingkungan multi-app di mana kelas yang sama mungkin memerlukan metadata berbeda.

@@ -11,7 +11,7 @@ This document provides a comprehensive audit of the HonestJS framework, identify
 - [x] **Lifecycle Hooks:** No support for `OnModuleInit`, `OnApplicationBootstrap`, `OnModuleDestroy`, or `BeforeApplicationShutdown`.
 - [x] **Async Providers:** Providers are resolved synchronously. Missing `useFactory` with `async/await` support.
 - [x] **Factory Providers:** No formal `useFactory`, `useValue`, or `useExisting` provider patterns.
-- [ ] **Dependency Graph:** No built-in way to visualize or inspect the dependency graph at startup.
+- [x] **Dependency Graph:** No built-in way to visualize or inspect the dependency graph at startup.
 
 ### Dependency Injection (DI)
 - [x] **Injection Scopes:** Only Singleton scope is supported. Missing `Request` and `Transient` scopes.
@@ -42,13 +42,13 @@ This document provides a comprehensive audit of the HonestJS framework, identify
 ### Ecosystem & Advanced Features
 - [x] **Configuration Module:** No official way to handle hierarchical configuration and `.env` files.
 - [ ] **File Upload:** No native `@UploadedFile()` or `@UploadedFiles()` decorators for multipart handling.
-- [ ] **Websockets:** No support for Socket.io or native WebSockets via decorators.
+- [x] **Websockets:** No support for Socket.io or native WebSockets via decorators.
 - [ ] **Microservices:** No transport layers for TCP, Redis, NATS, etc.
 - [ ] **Task Scheduling:** No built-in Cron or interval decorators.
 - [ ] **Event Emitter:** No internal event bus for decoupled communication.
 - [ ] **Cache Module:** Missing standard caching abstraction.
 - [ ] **Health Checks:** No built-in support for Terminus or health check endpoints.
-- [ ] **CLI:** Lack of a scaffolding tool for generating boilerplate code.
+- [x] **CLI:** Lack of a scaffolding tool for generating boilerplate code.
 
 ---
 
@@ -67,11 +67,11 @@ This document provides a comprehensive audit of the HonestJS framework, identify
 4. [x] **Configuration Module:** Develop a `@honestjs/config` package.
 5. [x] **Logger Injection:** Allow `@InjectLogger()` or standard injection for the framework logger.
 
-### Phase 3: Ecosystem Expansion (Long Term) - 🚧 IN PROGRESS
+### Phase 3: Ecosystem Expansion (Long Term) - ✅ COMPLETE
 1. [x] **Swagger Integration:** Automate OpenAPI 3.0 spec generation.
 2. [x] **Request Scoping:** Implement `Request` scope in the DI container.
-3. [ ] **Websockets & SSE:** Add real-time communication support.
-4. [ ] **CLI Tool:** Develop `honest-cli` for rapid prototyping.
+3. [x] **Websockets & SSE:** Add real-time communication support.
+4. [x] **CLI Tool:** Develop `honest-cli` for rapid prototyping.
 
 ## 🐛 Bug Fix Roadmap
 1. [ ] **Metadata Collision:** Ensure `MetadataRegistry` (static) doesn't cause issues in multi-app environments where the same class might need different metadata (rare but technically possible).
