@@ -1,91 +1,74 @@
-# HonestJS Monorepo Migration Plan (Refined for Performance)
+# HonestJS Monorepo Migration Plan (Core + CLI + Skills)
 
-This plan outlines the structural changes to transform HonestJS into a NestJS-like monorepo while maintaining Hono's high-performance characteristics.
+This plan outlines the structural changes to transform HonestJS into a NestJS-like monorepo while maintaining Hono's high-performance characteristics and advancing our CLI ecosystem.
 
-## 🚀 Performance Core Principles
+## 🚀 Performance & DX Core Principles
 
-To ensure HonestJS remains as fast as raw Hono, the migration will adhere to these principles:
-
-1.  **Zero-Overhead Abstractions**: Decorators in `@honestjs/common` will be pure metadata providers. No logic will execute at request-time inside decorators.
-2.  **Bootstrap Pre-computation**: All module discovery, dependency resolution, and pipeline chaining (guards, interceptors, pipes) will be performed **once** during the bootstrap phase.
-3.  **Flat Pipeline Execution**: The `PipelineExecutor` will compile component chains into a flat, optimized execution sequence. We will avoid deep recursive calls or complex observable streams (like RxJS) in the request hot-path.
-4.  **Native Hono Integration**: The framework will register "finalized" handlers directly to Hono. At request time, Hono will call a pre-compiled function that has all its dependencies already resolved.
-5.  **Dependency Isolation**: The monorepo structure will ensure that only the code you use ends up in your bundle (tree-shakability).
+1.  **"Hot Path" Execution**: Pre-compile all route handlers, guards, and pipes during bootstrap to minimize request-time overhead.
+2.  **Lightweight Abstractions**: `@honestjs/common` remains zero-dependency and tree-shakable.
+3.  **Modular Skills**: Developers can add features (Skills) on-demand without bloating the core.
+4.  **Extensible CLI**: A powerful scaffolding engine that supports dynamic templates and automated skill injection.
 
 ---
 
-## 📦 Revised Package Structure
+## 📦 Monorepo Package Structure
 
-### 1. `@honestjs/common` (The Light Foundation)
-- **Goal**: Zero external dependencies (besides `reflect-metadata`).
-- **Content**:
-  - All public decorators (`@Controller`, `@Get`, `@Inject`, etc.).
-  - Component interfaces (`Guard`, `Pipe`, `Interceptor`).
-  - Standard HTTP exception classes.
-  - Lightweight Logger and Config interfaces.
-- **Performance**: Designed to be fully tree-shakable and safe for Edge/Cloudflare Workers.
+### 1. `@honestjs/common`
+- **Goal**: Shared decorators and interfaces.
+- **Content**: `@Controller`, `@Injectable`, `Guard`, `Interceptor`, etc.
 
-### 2. `@honestjs/core` (The High-Performance Engine)
-- **DI Container**: Async-first, singleton-optimized resolution.
-- **Application Engine**: Manages the bootstrap lifecycle and pre-computes the routing table.
-- **Scanner & Discovery**: Efficiently crawls the module graph to build the application state.
-- **Metadata Repository**: A fast, read-only snapshot of metadata used after bootstrap.
+### 2. `@honestjs/core`
+- **Goal**: High-performance engine and DI.
+- **Content**: `Container`, `Application`, `PipelineExecutor`.
 
-### 3. `@honestjs/platform-hono` (The Bridge)
-- **Hono Adapter**: Translates framework-neutral pipeline executions into Hono middleware and handlers.
-- **Fast Path**: Ensures that the mapping from Hono `Context` to Controller parameters is direct and uses pre-calculated indices.
+### 3. `@honestjs/cli` (Advancement)
+- **Engine**: Move to a schematic-based approach for code generation.
+- **Templates**: Integrated project starters (`standard`, `microservice`, `edge`).
+- **Skill Registry**: Logic to download, install, and auto-configure HonestJS Skills.
 
-### 4. `@honestjs/swagger`, `@honestjs/websockets`, `@honestjs/microservices`
-- **Optional Features**: These will remain as separate packages to ensure their dependencies (like `socket.io` or `swagger-ui`) don't bloat the core framework.
+### 4. `@honestjs/skills-*` (The Ecosystem)
+- **`@honestjs/skills-database`**: Integration with Prisma/Drizzle.
+- **`@honestjs/skills-auth`**: JWT, Passport-like logic.
+- **`@honestjs/skills-swagger`**: OpenAPI generation.
+- **`@honestjs/skills-websockets`**: Gateway and adapter logic.
 
 ---
 
-## 🛠 Strategic Refinements
+## 🛠 Strategic Pillars
 
-### Pre-Compiled Handlers
-Instead of resolving guards/pipes at request time:
-```typescript
-// During Bootstrap:
-const chain = [
-  ...globalGuards,
-  ...controllerGuards,
-  ...handlerGuards
-];
-// We create a single "Hot Handler":
-const hotHandler = async (c) => {
-  for(const guard of chain) {
-    if (!await guard.canActivate(ctx)) return c.json({ error: 'Forbidden' }, 403);
-  }
-  const args = await resolveParams(c); // using pre-computed indices
-  return controller.method(...args);
-};
-hono.get(path, hotHandler);
-```
+### 1. The "Skills" System
+A Skill is a modular package that extends the HonestJS runtime. 
+- **Command**: `honest skill add auth`
+- **Action**: 
+  1. Installs `@honestjs/skills-auth`.
+  2. Runs a `post-install` schematic to add `AuthModule` to `app.module.ts`.
+  3. Generates boilerplate (e.g., `auth.service.ts`, `auth.controller.ts`).
 
-### Lightweight Execution Context
-We will avoid creating a heavy `ExecutionContext` object for every request. Instead, we will pass a recycled or minimal "Host" object that provides just enough metadata for guards and interceptors to function.
+### 2. Rich Project Templates
+CLI templates will be optimized for different environments:
+- **`standard`**: Full-featured backend for Node.js/Bun.
+- **`edge`**: Stripped-down core optimized for Cloudflare Workers/Vercel Edge.
+- **`microservice`**: Includes pre-configured transport layers (NATS, Redis).
 
-### Optimized DI Access
-Singleton services will be resolved once and stored in a flat array/map for instant access during request-scoped resolution, minimizing the overhead of the DI container.
+### 3. CLI Schematics
+The CLI will move from simple file copying to a **Template Engine** (e.g., EJS or Handlebars) to allow conditional code generation based on user choices.
 
 ---
 
-## 🗺 Directory Mapping
+## 🗺 Directory Mapping (Monorepo)
 
-| Current Path | Target Package | Status |
-|--------------|----------------|--------|
-| `src/di/` | `@honestjs/core/di` | Core Logic |
-| `src/decorators/` | `@honestjs/common/decorators` | Metadata Only |
-| `src/interfaces/` | `@honestjs/common/interfaces` | Shared Types |
-| `src/managers/` | `@honestjs/core/managers` | Execution Logic |
-| `src/registries/` | `@honestjs/core/registries` | Registry Logic |
-| `src/swagger/` | `@honestjs/swagger` | Plugin |
-| `src/websockets/` | `@honestjs/websockets` | Plugin |
-| `src/application.ts` | `@honestjs/core` | Entry Point |
+| Current Path | Target Package | Role |
+|--------------|----------------|------|
+| `src/di/` | `@honestjs/core/di` | DI Engine |
+| `src/cli/` | `@honestjs/cli` | Scaffolding Tool |
+| `src/decorators/` | `@honestjs/common/decorators` | Metadata |
+| `src/swagger/` | `@honestjs/skills-swagger` | Optional Skill |
+| `src/websockets/` | `@honestjs/skills-websockets` | Optional Skill |
+| `packages/cli/templates/` | **NEW** | Scaffold Blueprints |
 
 ## ✅ Migration Checklist
-- [ ] Initialize Bun Workspace.
-- [ ] Extract `@honestjs/common` and verify it has no heavy dependencies.
-- [ ] Refactor `Application` to pre-compile route handlers.
-- [ ] Move Hono-specific logic to `@honestjs/platform-hono`.
-- [ ] Ensure all 260 tests pass with the new "Hot Path" execution.
+- [ ] **Infrastructure**: Initialize Bun Workspace and root configurations.
+- [ ] **Common & Core**: Extract base packages and implement "Hot Path" logic.
+- [ ] **CLI Refactor**: Move CLI to its package and implement the Template Engine.
+- [ ] **Skill Interface**: Define the standard way for skills to register themselves into an application.
+- [ ] **Validation**: Port existing Zod/Class-validator logic to `@honestjs/skills-validation`.
