@@ -12,7 +12,8 @@ import type {
 	RouteInfo,
 	DiContainer,
 	ILogger,
-	IMetadataRepository
+	IMetadataRepository,
+	DynamicModule
 } from './interfaces'
 import type { Constructor } from './types'
 import { ErrorHandler, NotFoundHandler } from './handlers'
@@ -95,8 +96,8 @@ export class Application {
 		emitStartupGuideLogs(this.logger, this.options.startupGuide, error, rootModule)
 	}
 
-	async register(moduleClass: Constructor): Promise<Application> {
-		const controllers = await this.componentManager.registerModule(moduleClass)
+	async register(moduleItem: Constructor | DynamicModule): Promise<Application> {
+		const controllers = await this.componentManager.registerModule(moduleItem)
 		const debugStartup =
 			this.options.debug === true ||
 			(typeof this.options.debug === 'object' && Boolean(this.options.debug.startup))
@@ -104,12 +105,13 @@ export class Application {
 		await this.routeManager.register(controllers, this.options.routing?.prefix)
 
 		if (debugStartup) {
+			const moduleName = typeof moduleItem === 'function' ? moduleItem.name : moduleItem.module.name
 			this.logger.emit({
 				level: 'info',
 				category: 'startup',
 				message: 'Application registered',
 				details: {
-					rootModule: moduleClass.name,
+					rootModule: moduleName,
 					controllerCount: controllers.length,
 					routeCount: this.getRoutes().length
 				}
@@ -120,12 +122,12 @@ export class Application {
 
 	/**
 	 * Bootstraps the application from a root module.
-	 * @param rootModule - The main application module
+	 * @param rootModule - The main application module (static or dynamic)
 	 * @param options - Configuration options
 	 * @returns An object containing the application instance and the underlying Hono app
 	 */
 	static async create(
-		rootModule: Constructor,
+		rootModule: Constructor | DynamicModule,
 		options: HonestOptions = {}
 	): Promise<{ app: Application; hono: Hono }> {
 		const debugStartup =

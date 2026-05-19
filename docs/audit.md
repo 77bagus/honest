@@ -5,7 +5,7 @@ This document provides a comprehensive audit of the HonestJS framework, identify
 ## 📋 Framework Audit Checklist
 
 ### Core Architecture & Modules
-- [ ] **Dynamic Modules:** Current `@Module()` is static. Lack of `register()`, `forRoot()`, or `forFeature()` patterns for runtime configuration.
+- [x] **Dynamic Modules:** Current `@Module()` is static. Lack of `register()`, `forRoot()`, or `forFeature()` patterns for runtime configuration.
 - [x] **Module Encapsulation (Exports):** Lack of `exports` property in `ModuleOptions`. Currently, all services registered in any module are effectively public once resolved.
 - [x] **Circular Dependencies:** Detected but not resolvable. Missing `forwardRef()` utility for handling cross-module or cross-service circularities.
 - [x] **Lifecycle Hooks:** No support for `OnModuleInit`, `OnApplicationBootstrap`, `OnModuleDestroy`, or `BeforeApplicationShutdown`.
@@ -23,7 +23,7 @@ This document provides a comprehensive audit of the HonestJS framework, identify
 - [x] **Interceptors:** No Interceptor layer for cross-cutting concerns (transforming responses, mapping streams, etc.).
 - [ ] **Global Pipeline Granularity:** Global guards/pipes/filters are applied to all routes. Missing logic to exclude specific routes from global components.
 - [x] **Execution Context:** The pipeline passes Hono's `Context`. Missing a framework-level `ExecutionContext` that provides metadata about the class and handler being invoked.
-- [ ] **Native Validation Pipe:** No built-in validation pipe integrated with `class-validator` or `zod`.
+- [x] **Native Validation Pipe:** No built-in validation pipe integrated with `class-validator` or `zod`.
 - [ ] **Filter Priority:** Unclear priority/ordering for multiple exception filters.
 
 ### Routing & Controllers
@@ -40,7 +40,7 @@ This document provides a comprehensive audit of the HonestJS framework, identify
 - [ ] **Error Messages:** Circular dependency errors could be more descriptive about the path of the cycle.
 
 ### Ecosystem & Advanced Features
-- [ ] **Configuration Module:** No official way to handle hierarchical configuration and `.env` files.
+- [x] **Configuration Module:** No official way to handle hierarchical configuration and `.env` files.
 - [ ] **File Upload:** No native `@UploadedFile()` or `@UploadedFiles()` decorators for multipart handling.
 - [ ] **Websockets:** No support for Socket.io or native WebSockets via decorators.
 - [ ] **Microservices:** No transport layers for TCP, Redis, NATS, etc.
@@ -63,8 +63,8 @@ This document provides a comprehensive audit of the HonestJS framework, identify
 ### Phase 2: Pipeline & DX (Medium Term) - 🚧 IN PROGRESS
 1. [x] **Interceptors:** Add the Interceptor layer to the `PipelineExecutor`.
 2. [x] **Async Providers:** Enable `async` support for `useFactory`.
-3. [ ] **Validation Pipe:** Create a native `ZodValidationPipe` or `ClassValidatorPipe`.
-4. [ ] **Configuration Module:** Develop a `@honestjs/config` package.
+3. [x] **Validation Pipe:** Create a native `ZodValidationPipe` or `ClassValidatorPipe`.
+4. [x] **Configuration Module:** Develop a `@honestjs/config` package.
 5. [ ] **Logger Injection:** Allow `@InjectLogger()` or standard injection for the framework logger.
 
 ### Phase 3: Ecosystem Expansion (Long Term) - ⏳ UPCOMING

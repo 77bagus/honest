@@ -284,7 +284,13 @@ export class ComponentManager {
 
 	// -- Module registration --
 
-	async registerModule(moduleClass: Constructor, registered = new Set<Constructor>()): Promise<Constructor[]> {
+	async registerModule(
+		moduleItem: Constructor | DynamicModule,
+		registered = new Set<Constructor>()
+	): Promise<Constructor[]> {
+		const isDynamic = typeof moduleItem === 'object' && 'module' in moduleItem
+		const moduleClass = isDynamic ? (moduleItem as DynamicModule).module : (moduleItem as Constructor)
+
 		if (!moduleClass || registered.has(moduleClass)) {
 			return []
 		}

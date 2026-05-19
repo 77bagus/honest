@@ -5,7 +5,7 @@ Dokumen ini memberikan audit komprehensif terhadap framework HonestJS, mengident
 ## 📋 Daftar Periksa (Checklist) Audit Framework
 
 ### Arsitektur Inti & Modul
-- [ ] **Modul Dinamis:** Saat ini `@Module()` bersifat statis. Kurangnya pola `register()`, `forRoot()`, atau `forFeature()` untuk konfigurasi runtime.
+- [x] **Modul Dinamis:** Saat ini `@Module()` bersifat statis. Kurangnya pola `register()`, `forRoot()`, atau `forFeature()` untuk konfigurasi runtime.
 - [x] **Enkapsulasi Modul (Exports):** Kurangnya properti `exports` pada `ModuleOptions`. Saat ini, semua layanan yang terdaftar di modul mana pun secara efektif bersifat publik setelah di-resolve.
 - [x] **Circular Dependencies:** Terdeteksi tetapi tidak dapat di-resolve. Kurangnya utilitas `forwardRef()` untuk menangani sirkularitas antar-modul atau antar-layanan.
 - [x] **Lifecycle Hooks:** Tidak ada dukungan untuk `OnModuleInit`, `OnApplicationBootstrap`, `OnModuleDestroy`, atau `BeforeApplicationShutdown`.
@@ -23,7 +23,7 @@ Dokumen ini memberikan audit komprehensif terhadap framework HonestJS, mengident
 - [x] **Interceptors:** Belum ada lapisan Interceptor untuk urusan cross-cutting (transformasi respons, pemetaan stream, dll.).
 - [ ] **Granularitas Pipeline Global:** Global guards/pipes/filters diterapkan ke semua rute. Kurang logika untuk mengecualikan rute tertentu dari komponen global.
 - [x] **Execution Context:** Pipeline meneruskan `Context` milik Hono. Kurang `ExecutionContext` tingkat framework yang menyediakan metadata tentang kelas dan handler yang sedang dipanggil.
-- [ ] **Native Validation Pipe:** Belum ada pipe validasi bawaan yang terintegrasi dengan `class-validator` atau `zod`.
+- [x] **Native Validation Pipe:** Belum ada pipe validasi bawaan yang terintegrasi dengan `class-validator` atau `zod`.
 - [ ] **Prioritas Filter:** Urutan prioritas tidak jelas untuk beberapa exception filter.
 
 ### Routing & Controller
@@ -40,7 +40,7 @@ Dokumen ini memberikan audit komprehensif terhadap framework HonestJS, mengident
 - [ ] **Pesan Kesalahan:** Kesalahan circular dependency bisa lebih deskriptif tentang jalur siklusnya.
 
 ### Ekosistem & Fitur Lanjutan
-- [ ] **Modul Konfigurasi:** Belum ada cara resmi untuk menangani konfigurasi hierarkis dan file `.env`.
+- [x] **Modul Konfigurasi:** Belum ada cara resmi untuk menangani konfigurasi hierarkis dan file `.env`.
 - [ ] **File Upload:** Tidak ada dekorator asli `@UploadedFile()` atau `@UploadedFiles()` untuk penanganan multipart.
 - [ ] **Websockets:** Tidak ada dukungan untuk Socket.io atau WebSocket asli melalui dekorator.
 - [ ] **Microservices:** Tidak ada lapisan transport untuk TCP, Redis, NATS, dll.
@@ -55,7 +55,7 @@ Dokumen ini memberikan audit komprehensif terhadap framework HonestJS, mengident
 ## 🚀 Rekomendasi Rencana Pengembangan
 
 ### Fase 1: Kekokohan Inti (Jangka Pendek) - ✅ SELESAI
-1. [x] **Lifecycle Hooks:** Implementasikan `OnModuleInit` dan `OnApplicationBootstrap` untuk memungkinkan layanan melakukan inisialisasi (misalnya, koneksi DB).
+1. [x] **Lifecycle Hooks:** Implementasikan `OnModuleInit` and `OnApplicationBootstrap` untuk memungkinkan layanan melakukan inisialisasi (misalnya, koneksi DB).
 2. [x] **Resolusi Circular Dependency:** Perkenalkan `forwardRef()` untuk menangani rantai dependensi yang kompleks.
 3. [x] **Module Exports:** Implementasikan enkapsulasi dalam `@Module` untuk membatasi visibilitas layanan.
 4. [x] **Provider yang Ditingkatkan:** Tambahkan dukungan untuk `useValue` dan `useFactory` (sinkron).
@@ -63,8 +63,8 @@ Dokumen ini memberikan audit komprehensif terhadap framework HonestJS, mengident
 ### Fase 2: Pipeline & DX (Jangka Menengah) - 🚧 SEDANG BERJALAN
 1. [x] **Interceptors:** Tambahkan lapisan Interceptor ke `PipelineExecutor`.
 2. [x] **Async Providers:** Aktifkan dukungan `async` untuk `useFactory`.
-3. [ ] **Validation Pipe:** Buat `ZodValidationPipe` atau `ClassValidatorPipe asli.
-4. [ ] **Modul Konfigurasi:** Kembangkan paket `@honestjs/config`.
+3. [x] **Validation Pipe:** Buat `ZodValidationPipe` atau `ClassValidatorPipe asli.
+4. [x] **Modul Konfigurasi:** Kembangkan paket `@honestjs/config`.
 5. [ ] **Logger Injection:** Izinkan `@InjectLogger()` atau injeksi standar untuk logger framework.
 
 ### Fase 3: Ekspansi Ekosistem (Jangka Panjang) - ⏳ AKAN DATANG

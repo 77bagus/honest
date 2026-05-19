@@ -5,7 +5,8 @@ import type {
 	MetadataComponentTypeMap,
 	ModuleOptions,
 	ParameterMetadata,
-	RouteDefinition
+	RouteDefinition,
+	DynamicModule
 } from '../interfaces'
 import { MetadataRegistry } from './metadata.registry'
 import { resolveForwardRef } from '../utils/forward-ref.util'
@@ -25,6 +26,7 @@ export class MetadataRepository implements IMetadataRepository {
 	private readonly modules = new Map<Constructor, ModuleOptions>()
 	private readonly providerToModule = new Map<Constructor, Constructor>()
 	private readonly moduleVisibleProviders = new Map<Constructor, Set<Constructor>>()
+	private readonly globalModules = new Set<Constructor>()
 
 	private readonly controllerComponents = new Map<MetadataComponentType, Map<Constructor, unknown[]>>([
 		['middleware', new Map<Constructor, unknown[]>()],
@@ -44,7 +46,7 @@ export class MetadataRepository implements IMetadataRepository {
 		['interceptor', new Map()]
 	])
 
-	static fromRootModule(rootModule: Constructor): MetadataRepository {
+	static fromRootModule(rootModule: Constructor | DynamicModule): MetadataRepository {
 		const snapshot = new MetadataRepository()
 		snapshot.captureModuleGraph(rootModule)
 		return snapshot
@@ -136,27 +138,40 @@ export class MetadataRepository implements IMetadataRepository {
 		return visible ? visible.has(provider) : true
 	}
 
-	private captureModuleGraph(rootModule: Constructor): void {
+	private captureModuleGraph(input: Constructor | DynamicModule): void {
 		const visitedModules = new Set<Constructor>()
 		const controllers = new Set<Constructor>()
 
-		const visitModule = (moduleClass: Constructor): void => {
+		const visitModule = (moduleItem: Constructor | DynamicModule): void => {
+			const isDynamic = typeof moduleItem === 'object' && 'module' in moduleItem
+			const moduleClass = isDynamic ? (moduleItem as DynamicModule).module : (moduleItem as Constructor)
+
 			if (visitedModules.has(moduleClass)) {
 				return
 			}
 			visitedModules.add(moduleClass)
 
-			const moduleOptions = MetadataRegistry.getModuleOptions(moduleClass)
-			if (!moduleOptions) {
-				return
+			const staticOptions = MetadataRegistry.getModuleOptions(moduleClass) || {}
+			const dynamicOptions = isDynamic ? (moduleItem as DynamicModule) : {}
+
+			if (isDynamic && (moduleItem as DynamicModule).isGlobal) {
+				this.globalModules.add(moduleClass)
 			}
 
 			const moduleSnapshot: ModuleOptions = {
-				controllers: moduleOptions.controllers ? [...moduleOptions.controllers] : undefined,
-				services: moduleOptions.services ? [...moduleOptions.services] : undefined,
-				imports: moduleOptions.imports ? [...moduleOptions.imports] : undefined,
-				exports: moduleOptions.exports ? [...moduleOptions.exports] : undefined
+				controllers: [...(staticOptions.controllers || []), ...(dynamicOptions.controllers || [])],
+				services: [...(staticOptions.services || []), ...(dynamicOptions.services || [])],
+				imports: [...(staticOptions.imports || []), ...(dynamicOptions.imports || [])],
+				exports: [...(staticOptions.exports || []), ...(dynamicOptions.exports || [])]
 			}
+
+			// De-duplicate
+			if (moduleSnapshot.controllers?.length)
+				moduleSnapshot.controllers = Array.from(new Set(moduleSnapshot.controllers))
+			if (moduleSnapshot.services?.length) moduleSnapshot.services = Array.from(new Set(moduleSnapshot.services))
+			if (moduleSnapshot.imports?.length) moduleSnapshot.imports = Array.from(new Set(moduleSnapshot.imports))
+			if (moduleSnapshot.exports?.length) moduleSnapshot.exports = Array.from(new Set(moduleSnapshot.exports))
+
 			this.modules.set(moduleClass, moduleSnapshot)
 
 			for (const controller of moduleSnapshot.controllers || []) {
@@ -177,7 +192,7 @@ export class MetadataRepository implements IMetadataRepository {
 			}
 		}
 
-		visitModule(rootModule)
+		visitModule(input)
 
 		for (const controller of controllers) {
 			this.captureController(controller)
@@ -199,10 +214,15 @@ export class MetadataRepository implements IMetadataRepository {
 			const options = this.modules.get(moduleClass)
 			if (options && options.exports) {
 				for (const exportItem of options.exports) {
-					const resolved = resolveForwardRef(exportItem) as Constructor
-					if (this.modules.has(resolved)) {
+					const resolved = resolveForwardRef(exportItem) as Constructor | DynamicModule
+					const resolvedClass =
+						typeof resolved === 'object' && 'module' in resolved
+							? resolved.module
+							: (resolved as Constructor)
+
+					if (this.modules.has(resolvedClass)) {
 						// It's a module re-export
-						const nestedExports = getExports(resolved, visiting)
+						const nestedExports = getExports(resolvedClass, visiting)
 						nestedExports.forEach((e) => exports.add(e))
 					} else {
 						// It's a provider export (can be a Constructor or a Provider object)
@@ -217,8 +237,18 @@ export class MetadataRepository implements IMetadataRepository {
 			return exports
 		}
 
+		const globalExports = new Set<Constructor>()
+		for (const globalMod of this.globalModules) {
+			const exports = getExports(globalMod)
+			exports.forEach((e) => globalExports.add(e))
+		}
+
 		for (const moduleClass of modules) {
 			const visible = new Set<Constructor>()
+
+			// 0. Global exports
+			globalExports.forEach((e) => visible.add(e))
+
 			const options = this.modules.get(moduleClass)
 			if (options) {
 				// 1. Its own services
@@ -237,8 +267,12 @@ export class MetadataRepository implements IMetadataRepository {
 				// 3. Exported services from imported modules
 				if (options.imports) {
 					for (const importedModule of options.imports) {
-						const resolved = resolveForwardRef(importedModule) as Constructor
-						const exportedFromImport = getExports(resolved)
+						const resolved = resolveForwardRef(importedModule) as Constructor | DynamicModule
+						const resolvedClass =
+							typeof resolved === 'object' && 'module' in resolved
+								? resolved.module
+								: (resolved as Constructor)
+						const exportedFromImport = getExports(resolvedClass)
 						exportedFromImport.forEach((e) => visible.add(e))
 					}
 				}
