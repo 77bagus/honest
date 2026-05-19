@@ -34,8 +34,8 @@ This document provides a comprehensive audit of the HonestJS framework, identify
 - [ ] **SSE Support:** No native support for Server-Sent Events via decorators.
 
 ### Observability & DX
-- [ ] **Swagger/OpenAPI:** No built-in or plugin-based OpenAPI generation.
-- [ ] **Logger Injection:** No easy way to inject the framework logger into user services.
+- [x] **Swagger/OpenAPI:** No built-in or plugin-based OpenAPI generation.
+- [x] **Logger Injection:** No easy way to inject the framework logger into user services.
 - [x] **Diagnostics:** While there are some debug logs, there is no "Inspector" mode for real-time monitoring.
 - [ ] **Error Messages:** Circular dependency errors could be more descriptive about the path of the cycle.
 
@@ -60,15 +60,15 @@ This document provides a comprehensive audit of the HonestJS framework, identify
 3. [x] **Module Exports:** Implement encapsulation in `@Module` to restrict service visibility.
 4. [x] **Enhanced Providers:** Add support for `useValue` and `useFactory` (sync).
 
-### Phase 2: Pipeline & DX (Medium Term) - 🚧 IN PROGRESS
+### Phase 2: Pipeline & DX (Medium Term) - ✅ COMPLETE
 1. [x] **Interceptors:** Add the Interceptor layer to the `PipelineExecutor`.
 2. [x] **Async Providers:** Enable `async` support for `useFactory`.
 3. [x] **Validation Pipe:** Create a native `ZodValidationPipe` or `ClassValidatorPipe`.
 4. [x] **Configuration Module:** Develop a `@honestjs/config` package.
-5. [ ] **Logger Injection:** Allow `@InjectLogger()` or standard injection for the framework logger.
+5. [x] **Logger Injection:** Allow `@InjectLogger()` or standard injection for the framework logger.
 
-### Phase 3: Ecosystem Expansion (Long Term) - ⏳ UPCOMING
-1. [ ] **Swagger Integration:** Automate OpenAPI 3.0 spec generation.
+### Phase 3: Ecosystem Expansion (Long Term) - 🚧 IN PROGRESS
+1. [x] **Swagger Integration:** Automate OpenAPI 3.0 spec generation.
 2. [ ] **Request Scoping:** Implement `Request` scope in the DI container.
 3. [ ] **Websockets & SSE:** Add real-time communication support.
 4. [ ] **CLI Tool:** Develop `honest-cli` for rapid prototyping.

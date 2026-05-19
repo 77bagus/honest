@@ -34,8 +34,8 @@ Dokumen ini memberikan audit komprehensif terhadap framework HonestJS, mengident
 - [ ] **Dukungan SSE:** Tidak ada dukungan asli untuk Server-Sent Events melalui dekorator.
 
 ### Observabilitas & DX (Developer Experience)
-- [ ] **Swagger/OpenAPI:** Belum ada pembuatan spek OpenAPI bawaan atau berbasis plugin.
-- [ ] **Logger Injection:** Tidak ada cara mudah untuk menyuntikkan logger framework ke dalam layanan pengguna.
+- [x] **Swagger/OpenAPI:** Belum ada pembuatan spek OpenAPI bawaan atau berbasis plugin.
+- [x] **Logger Injection:** Tidak ada cara mudah untuk menyuntikkan logger framework ke dalam layanan pengguna.
 - [x] **Diagnostik:** Meskipun ada beberapa log debug, tidak ada mode "Inspector" untuk pemantauan real-time.
 - [ ] **Pesan Kesalahan:** Kesalahan circular dependency bisa lebih deskriptif tentang jalur siklusnya.
 
@@ -60,15 +60,15 @@ Dokumen ini memberikan audit komprehensif terhadap framework HonestJS, mengident
 3. [x] **Module Exports:** Implementasikan enkapsulasi dalam `@Module` untuk membatasi visibilitas layanan.
 4. [x] **Provider yang Ditingkatkan:** Tambahkan dukungan untuk `useValue` dan `useFactory` (sinkron).
 
-### Fase 2: Pipeline & DX (Jangka Menengah) - 🚧 SEDANG BERJALAN
+### Fase 2: Pipeline & DX (Jangka Menengah) - ✅ SELESAI
 1. [x] **Interceptors:** Tambahkan lapisan Interceptor ke `PipelineExecutor`.
 2. [x] **Async Providers:** Aktifkan dukungan `async` untuk `useFactory`.
-3. [x] **Validation Pipe:** Buat `ZodValidationPipe` atau `ClassValidatorPipe asli.
+3. [x] **Validation Pipe:** Buat `ZodValidationPipe` atau `ClassValidatorPipe` asli.
 4. [x] **Modul Konfigurasi:** Kembangkan paket `@honestjs/config`.
-5. [ ] **Logger Injection:** Izinkan `@InjectLogger()` atau injeksi standar untuk logger framework.
+5. [x] **Logger Injection:** Izinkan `@InjectLogger()` atau injeksi standar untuk logger framework.
 
-### Fase 3: Ekspansi Ekosistem (Jangka Panjang) - ⏳ AKAN DATANG
-1. [ ] **Integrasi Swagger:** Otomatiskan pembuatan spesifikasi OpenAPI 3.0.
+### Fase 3: Ekspansi Ekosistem (Jangka Panjang) - 🚧 SEDANG BERJALAN
+1. [x] **Integrasi Swagger:** Otomatiskan pembuatan spesifikasi OpenAPI 3.0.
 2. [ ] **Request Scoping:** Implementasikan scope `Request` dalam kontainer DI.
 3. [ ] **Websockets & SSE:** Tambahkan dukungan komunikasi real-time.
 4. [ ] **Alat CLI:** Kembangkan `honest-cli` untuk prototyping cepat.
