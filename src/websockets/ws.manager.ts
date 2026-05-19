@@ -1,5 +1,5 @@
 import { GATEWAY_METADATA, WEBSOCKET_SERVER_METADATA } from './decorators'
-import type { IMetadataRepository, DiContainer, ILogger } from '../interfaces'
+import type { IMetadataRepository, DiContainer, ILogger, ParameterMetadata } from '../interfaces'
 import { NoopLogger } from '../loggers'
 import type { Constructor } from '../types'
 import { ParameterResolver } from '../managers/parameter.resolver'
@@ -72,13 +72,16 @@ export class WsManager {
 
 				// Bind message handlers
 				const handlers = this.discoverHandlers(gatewayClass, instance)
-				this.adapter!.bindMessageHandlers(
-					client,
-					handlers,
-					async (handler: (...args: any[]) => any, payload: any) => {
-						return this.processMessage(instance, handler, client, payload)
-					}
-				)
+				this.adapter!.bindMessageHandlers(client, handlers, async (handler: any, payload: any) => {
+					return this.processMessage(
+						gatewayClass,
+						handler.methodName,
+						instance,
+						handler.callback,
+						client,
+						payload
+					)
+				})
 
 				this.adapter!.bindClientDisconnect(client, () => {
 					this.handleDisconnect(instance, client)
@@ -110,13 +113,29 @@ export class WsManager {
 	}
 
 	private async processMessage(
-		instance: any,
+		gatewayClass: Constructor,
+		methodName: string | symbol,
+		_instance: any,
 		handler: (...args: any[]) => any,
-		_client: any,
+		client: any,
 		payload: any
 	): Promise<void> {
-		// Basic execution for now
-		await handler(payload)
+		const params = [...(this.metadataRepository.getParameters(gatewayClass).get(methodName) || [])]
+		params.sort((a, b) => a.index - b.index)
+
+		const wsContext = { socket: client, payload }
+
+		const args = await Promise.all(
+			params.map(async (param: ParameterMetadata) => {
+				return await param.factory(param.data, wsContext as any)
+			})
+		)
+
+		if (args.length === 0) {
+			await handler(payload)
+		} else {
+			await handler(...args)
+		}
 	}
 
 	private handleConnection(instance: any, client: any): void {

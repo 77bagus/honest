@@ -24,11 +24,11 @@ This document provides a comprehensive audit of the HonestJS framework, identify
 - [ ] **Global Pipeline Granularity:** Global guards/pipes/filters are applied to all routes. Missing logic to exclude specific routes from global components.
 - [x] **Execution Context:** The pipeline passes Hono's `Context`. Missing a framework-level `ExecutionContext` that provides metadata about the class and handler being invoked.
 - [x] **Native Validation Pipe:** No built-in validation pipe integrated with `class-validator` or `zod`.
-- [ ] **Filter Priority:** Unclear priority/ordering for multiple exception filters.
+- [x] **Filter Priority:** Unclear priority/ordering for multiple exception filters.
 
 ### Routing & Controllers
 - [ ] **Header/Media-Type Versioning:** Currently only URI-based versioning is explicitly handled.
-- [ ] **Versioning Logic:** No support for "Neutral" versioning that defaults to the latest version.
+- [x] **Versioning Logic:** No support for "Neutral" versioning that defaults to the latest version.
 - [ ] **Redirect Decorator:** Missing `@Redirect()` for declarative redirects.
 - [ ] **Render Decorator:** Missing `@Render()` for template engine integration.
 - [ ] **SSE Support:** No native support for Server-Sent Events via decorators.

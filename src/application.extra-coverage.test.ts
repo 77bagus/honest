@@ -2,16 +2,27 @@ import 'reflect-metadata'
 import { describe, expect, it, spyOn, afterEach } from 'bun:test'
 import { View, Page, MvcModule } from './decorators/mvc.decorator'
 import { UseComponent } from './decorators/use-component.decorator'
-import { Body, Param, Query, Header, Variable } from './decorators/parameter.decorator'
-import { MetadataRegistry } from './registries'
+import { Body, Param, Query, Header, Variable, Context as CtxDec } from './decorators/parameter.decorator'
+import { MetadataRegistry, StaticServiceRegistry, RouteRegistry } from './registries'
 import { ExecutionContextHost } from './managers/execution-context.host'
-import { ConsoleLogger } from './loggers'
+import { ConsoleLogger, Logger, NoopLogger } from './loggers'
 import { createParamDecorator } from './helpers/create-param-decorator.helper'
 import { createControllerTestApplication } from './testing'
 import { Controller, Get, Post } from './decorators'
-import { resolvePlugin, resolvePluginName, normalizePluginEntry } from './application/plugin-entries'
-import { createStartupGuideHints } from './application/startup-guide'
+import {
+	resolvePlugin,
+	resolvePluginName,
+	normalizePluginEntry,
+	normalizePluginEntries
+} from './application/plugin-entries'
+import { createStartupGuideHints, emitStartupGuide } from './application/startup-guide'
 import { isPlainObject, addLeadingSlash, normalizePath, stripEndSlash } from './utils/common.util'
+import { DocumentBuilder } from './swagger/document-builder'
+import { MessageBody, ConnectedSocket } from './websockets/decorators/params.decorator'
+import { ConfigService } from './config/config.service'
+import * as fixtures from './testing/fixtures/application-test-fixtures'
+import { ErrorHandler, NotFoundHandler } from './handlers'
+import { SwaggerModule } from './swagger'
 
 afterEach(() => {
 	MetadataRegistry.clear()
@@ -143,8 +154,8 @@ describe('Extra Coverage Tests', () => {
 		})
 	})
 
-	describe('ConsoleLogger', () => {
-		it('all levels including debug and info', () => {
+	describe('ConsoleLogger and LoggerService', () => {
+		it('ConsoleLogger: all levels including debug and info', () => {
 			const logger = new ConsoleLogger()
 			const infoSpy = spyOn(console, 'info').mockImplementation(() => {})
 			const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
@@ -165,6 +176,34 @@ describe('Extra Coverage Tests', () => {
 			infoSpy.mockRestore()
 			warnSpy.mockRestore()
 			errorSpy.mockRestore()
+		})
+
+		it('LoggerService: debug, warn, error methods and fallback', () => {
+			const infoSpy = spyOn(console, 'info').mockImplementation(() => {})
+			const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+			const errorSpy = spyOn(console, 'error').mockImplementation(() => {})
+
+			const logger = new Logger('Test')
+			logger.debug('debug msg')
+			expect(infoSpy).toHaveBeenCalled()
+
+			logger.warn('warn msg')
+			expect(warnSpy).toHaveBeenCalled()
+
+			logger.error('error msg', { detail: 1 })
+			expect(errorSpy).toHaveBeenCalled()
+
+			logger.log('log msg')
+			expect(infoSpy).toHaveBeenCalledTimes(2)
+
+			infoSpy.mockRestore()
+			warnSpy.mockRestore()
+			errorSpy.mockRestore()
+		})
+
+		it('NoopLogger', () => {
+			const logger = new NoopLogger()
+			logger.emit({ level: 'info', category: 'test', message: 'msg' })
 		})
 	})
 
@@ -201,7 +240,6 @@ describe('Extra Coverage Tests', () => {
 		})
 
 		it('should handle context tracker already initialized', async () => {
-			const { Context: CtxDec } = await import('./decorators/parameter.decorator')
 			@Controller('/test')
 			class TestController {
 				@Get('/')
@@ -225,10 +263,12 @@ describe('Extra Coverage Tests', () => {
 			expect(name).toBe('AnonymousPlugin#1')
 		})
 
-		it('normalizePluginEntry handles direct plugin type', () => {
+		it('normalizePluginEntry and normalizePluginEntries coverage', () => {
 			const instance = { beforeModulesRegistered: async () => {} }
 			const entry = normalizePluginEntry(instance, 0)
 			expect(entry.plugin).toBe(instance)
+
+			expect(normalizePluginEntries(undefined)).toEqual([])
 		})
 	})
 
@@ -239,6 +279,20 @@ describe('Extra Coverage Tests', () => {
 
 			const h2 = createStartupGuideHints('not decorated with @Service()')
 			expect(h2).toContain('Add @Service() to injectable classes used in constructor dependencies.')
+
+			const h3 = createStartupGuideHints('generic error')
+			expect(h3).toHaveLength(1)
+		})
+
+		it('emitStartupGuide with verbose and disabled', () => {
+			const logger = { emit: () => {} } as any
+			const spy = spyOn(logger, 'emit')
+			emitStartupGuide(logger, { verbose: true }, new Error('err'), class {})
+			expect(spy).toHaveBeenCalledTimes(2)
+
+			spy.mockClear()
+			emitStartupGuide(logger, false, new Error('err'), class {})
+			expect(spy).not.toHaveBeenCalled()
 		})
 	})
 
@@ -261,6 +315,106 @@ describe('Extra Coverage Tests', () => {
 		it('stripEndSlash edge cases', () => {
 			expect(stripEndSlash('')).toBe('')
 			expect(stripEndSlash(123 as any)).toBe('')
+		})
+	})
+
+	describe('DocumentBuilder', () => {
+		it('setTitle, setDescription, setVersion, addTag and addBearerAuth', () => {
+			const builder = new DocumentBuilder()
+			builder.setTitle('API').setDescription('DESC').setVersion('2.0')
+			builder.addTag('cats', 'cat description')
+			builder.addBearerAuth({ type: 'http' }, 'jwt')
+			const doc = builder.build()
+
+			expect(doc.info.title).toBe('API')
+			expect(doc.info.description).toBe('DESC')
+			expect(doc.info.version).toBe('2.0')
+			expect(doc.tags).toContainEqual({ name: 'cats', description: 'cat description' })
+			expect(doc.components.securitySchemes.jwt).toEqual({ type: 'http' })
+		})
+	})
+
+	describe('Websocket Decorators coverage', () => {
+		it('MessageBody and ConnectedSocket factory calls', async () => {
+			@Controller('/')
+			class MyWs {
+				@Get('/')
+				handle(@MessageBody('p') _p: any, @ConnectedSocket() _s: any) {}
+			}
+
+			await createControllerTestApplication({ controller: MyWs })
+			const params = MetadataRegistry.getParameters(MyWs).get('handle')!
+			expect(params).toBeDefined()
+
+			// factory is (data, ctx) => any where ctx is { socket, payload }
+			const wsCtx = { socket: 'mock', payload: { p: 'val' } }
+
+			// Find params by index to avoid order sensitivity
+			const p0 = params.find((p) => p.index === 0)!
+			const p1 = params.find((p) => p.index === 1)!
+
+			expect(await p0.factory(p0.data, wsCtx as any)).toBe('val')
+			expect(await p1.factory(p1.data, wsCtx as any)).toBe('mock')
+		})
+	})
+
+	describe('ConfigService', () => {
+		it('has() method and nested path edge cases', () => {
+			const config = new ConfigService({ app: { name: 'test' } })
+			expect(config.has('app.name')).toBe(true)
+			expect(config.has('app.version')).toBe(false)
+			expect(config.get('missing.path')).toBeUndefined()
+			expect(config.get('app.name.too.deep')).toBeUndefined()
+		})
+	})
+
+	describe('Static Registries and Handlers', () => {
+		it('StaticServiceRegistry', () => {
+			const reg = new StaticServiceRegistry()
+			expect(reg.isService(class {})).toBe(false)
+		})
+
+		it('RouteRegistry coverage', () => {
+			const reg = new RouteRegistry()
+			expect(reg.getRoutesByController('none')).toHaveLength(0)
+			expect(reg.getRoutesByMethod('get')).toHaveLength(0)
+			expect(reg.getRoutesByPath('/none')).toHaveLength(0)
+		})
+
+		it('Default Handlers', async () => {
+			const ctx = {
+				json: (data: any, status: number) => ({ data, status }),
+				get: (k: string) => (k === 'requestId' ? 'id' : undefined),
+				req: { path: '/404' }
+			} as any
+			const res1 = await NotFoundHandler.handle()(ctx)
+			expect(res1.status).toBe(404)
+
+			const res2 = await ErrorHandler.handle()(new Error('fail'), { ...ctx, req: { path: '/500' } } as any)
+			expect(res2.status).toBe(500)
+		})
+
+		it('SwaggerModule document clone', () => {
+			const doc = SwaggerModule.createDocument({ getRoutes: () => [] } as any, { paths: {} })
+			expect(doc).toBeDefined()
+		})
+	})
+
+	describe('Fixtures Coverage', () => {
+		it('should call all exported fixtures', () => {
+			expect(fixtures.createTestController()).toBeDefined()
+			expect(fixtures.createPayloadController()).toBeDefined()
+			expect(fixtures.createRawResponseController()).toBeDefined()
+			expect(fixtures.createRuntimeMetadataController()).toBeDefined()
+			expect(fixtures.createEmptyModule()).toBeDefined()
+			expect(fixtures.createBrokenControllerModule()).toBeDefined()
+			expect(fixtures.createDuplicateRouteControllers()).toBeDefined()
+			expect(fixtures.createUnsafeParamController()).toBeDefined()
+			expect(fixtures.createDiagnosticsAController()).toBeDefined()
+			expect(fixtures.createDiagnosticsBController()).toBeDefined()
+			expect(fixtures.createOnlyAController()).toBeDefined()
+			expect(fixtures.createOnlyBController()).toBeDefined()
+			expect(fixtures.createUndecoratedController()).toBeDefined()
 		})
 	})
 })

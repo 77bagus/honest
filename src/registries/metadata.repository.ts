@@ -214,6 +214,7 @@ export class MetadataRepository implements IMetadataRepository {
 
 		for (const service of services) {
 			this.captureCustomMetadata(service)
+			this.captureParameters(service)
 		}
 
 		// Calculate visible providers for each module
@@ -310,15 +311,7 @@ export class MetadataRepository implements IMetadataRepository {
 		const routes = (MetadataRegistry.getRoutes(controller) || []).map((route) => this.cloneRouteDefinition(route))
 		this.routes.set(controller, routes)
 
-		const parameters = MetadataRegistry.getParameters(controller)
-		const parameterSnapshot = new Map<string | symbol, ParameterMetadata[]>()
-		for (const [handlerName, entries] of parameters.entries()) {
-			parameterSnapshot.set(
-				handlerName,
-				(entries || []).map((entry) => ({ ...entry }))
-			)
-		}
-		this.parameters.set(controller, parameterSnapshot)
+		this.captureParameters(controller)
 
 		this.contextIndices.set(controller, new Map(MetadataRegistry.getContextIndices(controller) || new Map()))
 
@@ -345,6 +338,20 @@ export class MetadataRepository implements IMetadataRepository {
 
 		// Capture custom metadata for the controller class itself
 		this.captureCustomMetadata(controller)
+	}
+
+	private captureParameters(target: Constructor): void {
+		const parameters = MetadataRegistry.getParameters(target)
+		if (parameters.size === 0) return
+
+		const parameterSnapshot = new Map<string | symbol, ParameterMetadata[]>()
+		for (const [handlerName, entries] of parameters.entries()) {
+			parameterSnapshot.set(
+				handlerName,
+				(entries || []).map((entry) => ({ ...entry }))
+			)
+		}
+		this.parameters.set(target, parameterSnapshot)
 	}
 
 	private captureCustomMetadata(target: any, _propertyKey?: string | symbol): void {

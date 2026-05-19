@@ -11,7 +11,7 @@ Dokumen ini memberikan audit komprehensif terhadap framework HonestJS, mengident
 - [x] **Lifecycle Hooks:** Tidak ada dukungan untuk `OnModuleInit`, `OnApplicationBootstrap`, `OnModuleDestroy`, atau `BeforeApplicationShutdown`.
 - [x] **Async Providers:** Provider di-resolve secara sinkron. Kurang dukungan `useFactory` dengan `async/await`.
 - [x] **Factory Providers:** Belum ada pola provider formal `useFactory`, `useValue`, atau `useExisting`.
-- [ ] **Dependency Graph:** Tidak ada cara bawaan untuk memvisualisasikan atau memeriksa graf dependensi saat startup.
+- [x] **Dependency Graph:** Tidak ada cara bawaan untuk memvisualisasikan atau memeriksa graf dependensi saat startup.
 
 ### Dependency Injection (DI)
 - [x] **Injection Scopes:** Hanya scope Singleton yang didukung. Kurang scope `Request` dan `Transient`.
@@ -24,11 +24,11 @@ Dokumen ini memberikan audit komprehensif terhadap framework HonestJS, mengident
 - [ ] **Granularitas Pipeline Global:** Global guards/pipes/filters diterapkan ke semua rute. Kurang logika untuk mengecualikan rute tertentu dari komponen global.
 - [x] **Execution Context:** Pipeline meneruskan `Context` milik Hono. Kurang `ExecutionContext` tingkat framework yang menyediakan metadata tentang kelas dan handler yang sedang dipanggil.
 - [x] **Native Validation Pipe:** Belum ada pipe validasi bawaan yang terintegrasi dengan `class-validator` atau `zod`.
-- [ ] **Prioritas Filter:** Urutan prioritas tidak jelas untuk beberapa exception filter.
+- [x] **Prioritas Filter:** Urutan prioritas tidak jelas untuk beberapa exception filter.
 
 ### Routing & Controller
 - [ ] **Header/Media-Type Versioning:** Saat ini hanya versioning berbasis URI yang ditangani secara eksplisit.
-- [ ] **Logika Versioning:** Tidak ada dukungan untuk versioning "Neutral" yang default ke versi terbaru.
+- [x] **Logika Versioning:** Tidak ada dukungan untuk versioning "Neutral" yang default ke versi terbaru.
 - [ ] **Redirect Decorator:** Kurang dekorator `@Redirect()` untuk pengalihan deklaratif.
 - [ ] **Render Decorator:** Kurang dekorator `@Render()` untuk integrasi template engine.
 - [ ] **Dukungan SSE:** Tidak ada dukungan asli untuk Server-Sent Events melalui dekorator.
@@ -67,7 +67,7 @@ Dokumen ini memberikan audit komprehensif terhadap framework HonestJS, mengident
 4. [x] **Modul Konfigurasi:** Kembangkan paket `@honestjs/config`.
 5. [x] **Logger Injection:** Izinkan `@InjectLogger()` atau injeksi standar untuk logger framework.
 
-### Fase 3: Ekspansi Ekosistem (Jangka Panjang) - ✅ SELESAI
+### Phase 3: Ekspansi Ekosistem (Jangka Panjang) - ✅ SELESAI
 1. [x] **Integrasi Swagger:** Otomatiskan pembuatan spesifikasi OpenAPI 3.0.
 2. [x] **Request Scoping:** Implementasikan scope `Request` dalam kontainer DI.
 3. [x] **Websockets & SSE:** Tambahkan dukungan komunikasi real-time.
