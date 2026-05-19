@@ -130,7 +130,8 @@ export const normalizePath = (path?: string): string =>
  * stripEndSlash('/test') // '/test'
  * ```
  */
-export const stripEndSlash = (path: string): string => (path.endsWith('/') ? path.slice(0, -1) : path)
+export const stripEndSlash = (path: string): string =>
+	typeof path === 'string' ? (path.endsWith('/') ? path.slice(0, -1) : path) : ''
 
 /**
  * Checks if a value is a constructor function (callable with `new`).

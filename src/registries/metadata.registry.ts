@@ -6,19 +6,21 @@ import type {
 	ModuleOptions,
 	ParameterMetadata,
 	PipeType,
-	RouteDefinition
+	RouteDefinition,
+	InterceptorType
 } from '../interfaces'
 import type { Constructor } from '../types'
 
-export type ComponentType = 'middleware' | 'guard' | 'pipe' | 'filter'
+export type ComponentType = 'middleware' | 'guard' | 'pipe' | 'filter' | 'interceptor'
 
-export type ComponentInstance = MiddlewareType | GuardType | PipeType | FilterType
+export type ComponentInstance = MiddlewareType | GuardType | PipeType | FilterType | InterceptorType
 
 export interface ComponentTypeMap {
 	middleware: MiddlewareType
 	guard: GuardType
 	pipe: PipeType
 	filter: FilterType
+	interceptor: InterceptorType
 }
 
 /**
@@ -86,7 +88,8 @@ export class MetadataRegistry {
 		['middleware', new Map<Constructor, MiddlewareType[]>()],
 		['guard', new Map<Constructor, GuardType[]>()],
 		['pipe', new Map<Constructor, PipeType[]>()],
-		['filter', new Map<Constructor, FilterType[]>()]
+		['filter', new Map<Constructor, FilterType[]>()],
+		['interceptor', new Map<Constructor, InterceptorType[]>()]
 	])
 
 	/**
@@ -101,7 +104,8 @@ export class MetadataRegistry {
 		['middleware', new Map()],
 		['guard', new Map()],
 		['pipe', new Map()],
-		['filter', new Map()]
+		['filter', new Map()],
+		['interceptor', new Map()]
 	])
 
 	/**

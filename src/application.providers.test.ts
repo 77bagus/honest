@@ -23,9 +23,7 @@ describe('Enhanced Providers', () => {
 		class RootModule {}
 
 		const { app } = await Application.create(RootModule)
-		// We can't easily call the controller here without a full HTTP request
-		// but we can check the container
-		const apiKey = app.getContainer().resolve(API_KEY)
+		const apiKey = await app.getContainer().resolve(API_KEY)
 		expect(apiKey).toBe('secret-123')
 	})
 
@@ -57,7 +55,7 @@ describe('Enhanced Providers', () => {
 		class RootModule {}
 
 		const { app } = await Application.create(RootModule)
-		const logger = app.getContainer().resolve(Logger)
+		const logger = await app.getContainer().resolve(Logger)
 		expect(logger).toBeInstanceOf(ConsoleLogger)
 		expect(logger.log()).toBe('console')
 	})
@@ -72,8 +70,16 @@ describe('Enhanced Providers', () => {
 			}
 		}
 
+		@Controller('/')
+		class TestController {
+			@Get('/')
+			get() {
+				return 'ok'
+			}
+		}
+
 		@Module({
-			controllers: [],
+			controllers: [TestController],
 			services: [
 				Dependency,
 				{
@@ -86,7 +92,7 @@ describe('Enhanced Providers', () => {
 		class RootModule {}
 
 		const { app } = await Application.create(RootModule)
-		const config = app.getContainer().resolve<any>(CONFIG)
+		const config = await app.getContainer().resolve<any>(CONFIG)
 		expect(config.val).toBe('dep')
 	})
 })

@@ -2,11 +2,12 @@ import type { Context } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { HONEST_PIPELINE_CONTROLLER_KEY, HONEST_PIPELINE_HANDLER_KEY } from '../constants'
 import { NoopLogger } from '../loggers'
-import type { ILogger, ParameterMetadata } from '../interfaces'
+import type { ILogger, ParameterMetadata, HonestInterceptor, CallHandler, ExecutionContext } from '../interfaces'
 import type { IPipe } from '../interfaces'
 import { ComponentManager } from './component.manager'
 import { HandlerInvoker } from './handler.invoker'
 import { ParameterResolver } from './parameter.resolver'
+import { ExecutionContextHost } from './execution-context.host'
 import type { Constructor } from '../types'
 
 export interface PipelineExecutionInput {
@@ -37,7 +38,7 @@ export class PipelineExecutor {
 		context.set(HONEST_PIPELINE_CONTROLLER_KEY, controllerClass)
 		context.set(HONEST_PIPELINE_HANDLER_KEY, String(handlerName))
 
-		const guards = this.componentManager.getHandlerGuards(controllerClass, handlerName)
+		const guards = await this.componentManager.getHandlerGuards(controllerClass, handlerName)
 
 		for (const guard of guards) {
 			const canActivate = await guard.canActivate(context)
@@ -56,33 +57,58 @@ export class PipelineExecutor {
 			}
 		}
 
-		const args = await this.parameterResolver.resolveArguments({
-			controllerName: controllerClass.name,
-			handlerName,
-			handlerArity: handler.length,
-			handlerParams,
-			handlerPipes,
-			context
-		})
+		const interceptors = await this.componentManager.getHandlerInterceptors(controllerClass, handlerName)
+		const executionContext = new ExecutionContextHost(controllerClass, handler, context, handlerName)
 
-		if (this.debugPipeline) {
-			this.logger.emit({
-				level: 'debug',
-				category: 'pipeline',
-				message: `Resolved handler arguments for ${controllerClass.name}.${String(handlerName)}`,
-				details: {
-					guardCount: guards.length,
-					parameterCount: handlerParams.length,
-					pipeCount: handlerPipes.length
-				}
+		const handlerWrapper = async () => {
+			const args = await this.parameterResolver.resolveArguments({
+				controllerName: controllerClass.name,
+				handlerName,
+				handlerArity: handler.length,
+				handlerParams,
+				handlerPipes,
+				context
 			})
+
+			if (this.debugPipeline) {
+				this.logger.emit({
+					level: 'debug',
+					category: 'pipeline',
+					message: `Resolved handler arguments for ${controllerClass.name}.${String(handlerName)}`,
+					details: {
+						guardCount: guards.length,
+						parameterCount: handlerParams.length,
+						pipeCount: handlerPipes.length,
+						interceptorCount: interceptors.length
+					}
+				})
+			}
+
+			return handler(...args)
 		}
 
-		return this.handlerInvoker.invoke({
-			handler,
-			args,
-			context,
-			contextIndex
-		})
+		const result = await this.chainInterceptors(interceptors, executionContext, handlerWrapper)
+
+		return this.handlerInvoker.mapResult(result, context, contextIndex)
+	}
+
+	private async chainInterceptors(
+		interceptors: HonestInterceptor[],
+		context: ExecutionContext,
+		finalHandler: () => Promise<unknown>
+	): Promise<unknown> {
+		let index = 0
+
+		const next: CallHandler = {
+			handle: async () => {
+				if (index >= interceptors.length) {
+					return finalHandler()
+				}
+				const interceptor = interceptors[index++]
+				return interceptor.intercept(context, next)
+			}
+		}
+
+		return next.handle()
 	}
 }

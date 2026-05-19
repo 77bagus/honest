@@ -10,10 +10,10 @@ export interface DiContainer {
 	 * Resolves a dependency from the container
 	 * Creates a new instance or returns an existing one based on the container's configuration
 	 * @param token - The token or class constructor to resolve
-	 * @returns An instance of the requested dependency
+	 * @returns A promise resolving to an instance of the requested dependency
 	 * @throws {Error} If the dependency cannot be resolved
 	 */
-	resolve<T>(token: Constructor<T> | string | symbol): T
+	resolve<T>(token: Constructor<T> | string | symbol): Promise<T>
 
 	/**
 	 * Registers a pre-created instance in the container

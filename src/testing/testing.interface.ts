@@ -103,7 +103,7 @@ export interface CreateServiceTestContainerOptions {
  */
 export interface TestServiceContainer {
 	container: DiContainer
-	get<T>(target: Constructor<T>): T
+	get<T>(target: Constructor<T>): Promise<T>
 	register<T>(target: Constructor<T>, instance: T): void
 	has<T>(target: Constructor<T>): boolean
 	clear(): void

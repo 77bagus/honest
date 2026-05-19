@@ -1,214 +1,123 @@
-import type { Context, Hono } from 'hono'
+import type { Hono } from 'hono'
 import { VERSION_NEUTRAL } from '../constants'
 import { NoopLogger } from '../loggers'
-import type { DiContainer, ILogger, IMetadataRepository, ParameterMetadata, RouteDefinition } from '../interfaces'
-import { ComponentManager } from './component.manager'
-import { HandlerInvoker } from './handler.invoker'
-import { ParameterResolver } from './parameter.resolver'
-import { PipelineExecutor } from './pipeline.executor'
-import { RouteRegistry } from '../registries/route.registry'
+import type {
+	DiContainer,
+	ILogger,
+	IMetadataRepository,
+	ParameterMetadata,
+	RouteDefinition,
+	HonestOptions
+} from '../interfaces'
+import type { RouteRegistry } from '../registries'
 import type { Constructor } from '../types'
-import { isNil, isString, normalizePath } from '../utils'
+import { addLeadingSlash, normalizePath, stripEndSlash } from '../utils'
+import { ComponentManager } from './component.manager'
+import { PipelineExecutor } from './pipeline.executor'
 
 /**
- * Manager class for handling route registration in the Honest framework.
- *
- * Receives all per-app dependencies (Hono, Container, RouteRegistry,
- * ComponentManager) via constructor — no static state.
+ * Orchestrates the registration of routes from controller metadata into Hono
+ * Handles path building, versioning, and pipeline integration.
  */
 export class RouteManager {
-	private hono: Hono
-	private container: DiContainer
-	private routeRegistry: RouteRegistry
-	private componentManager: ComponentManager
-	private parameterResolver: ParameterResolver
-	private pipelineExecutor: PipelineExecutor
-	private metadataRepository: IMetadataRepository
-	private logger: ILogger
-	private globalPrefix?: string
-	private globalVersion?: number | typeof VERSION_NEUTRAL | number[]
-
 	constructor(
-		hono: Hono,
-		container: DiContainer,
-		routeRegistry: RouteRegistry,
-		componentManager: ComponentManager,
-		metadataRepository: IMetadataRepository,
-		logger: ILogger = new NoopLogger(),
-		options: {
-			prefix?: string
-			version?: number | typeof VERSION_NEUTRAL | number[]
-			debugPipeline?: boolean
-		} = {}
-	) {
-		this.hono = hono
-		this.container = container
-		this.routeRegistry = routeRegistry
-		this.componentManager = componentManager
-		this.logger = logger
-		this.parameterResolver = new ParameterResolver(
-			this.componentManager,
-			this.logger,
-			Boolean(options.debugPipeline)
-		)
-		this.pipelineExecutor = new PipelineExecutor(
-			this.componentManager,
-			this.parameterResolver,
-			new HandlerInvoker(),
-			this.logger,
-			Boolean(options.debugPipeline)
-		)
-		this.metadataRepository = metadataRepository
-		this.globalPrefix = options.prefix !== undefined ? this.normalizePath(options.prefix) : undefined
-		this.globalVersion = options.version
+		private readonly hono: Hono,
+		private readonly metadataRepository: IMetadataRepository,
+		private readonly componentManager: ComponentManager,
+		private readonly pipelineExecutor: PipelineExecutor,
+		private readonly routeRegistry: RouteRegistry,
+		private readonly container: DiContainer,
+		private readonly options: HonestOptions = {},
+		private readonly logger: ILogger = new NoopLogger(),
+		private readonly debugRoutes = false
+	) {}
 
-		this.applyGlobalMiddleware()
-	}
+	/**
+	 * Registers all controllers from a module into Hono.
+	 * @param controllers - List of controller classes to register
+	 * @param globalPrefix - Optional global prefix for all routes
+	 */
+	async register(controllers: Constructor[], globalPrefix?: string): Promise<void> {
+		const prefixSegment = globalPrefix ? addLeadingSlash(stripEndSlash(globalPrefix)) : ''
 
-	private applyGlobalMiddleware(): void {
-		const globalMiddleware = this.componentManager.getGlobalMiddleware()
-
-		for (const middleware of globalMiddleware) {
-			this.hono.use('*', middleware)
+		for (const controllerClass of controllers) {
+			const start = Date.now()
+			const routeCountBefore = this.routeRegistry.getRoutes().length
+			try {
+				await this.registerController(controllerClass, prefixSegment)
+				if (this.debugRoutes) {
+					this.logger.emit({
+						level: 'info',
+						category: 'routes',
+						message: 'Registered controller routes',
+						details: {
+							controller: controllerClass.name,
+							routeCountAdded: this.routeRegistry.getRoutes().length - routeCountBefore,
+							registrationDurationMs: Date.now() - start
+						}
+					})
+				}
+			} catch (error) {
+				if (this.debugRoutes) {
+					this.logger.emit({
+						level: 'error',
+						category: 'routes',
+						message: 'Failed to register controller routes',
+						details: {
+							controller: controllerClass.name,
+							error: error instanceof Error ? error.message : String(error),
+							errorMessage: error instanceof Error ? error.message : String(error)
+						}
+					})
+				}
+				throw error
+			}
 		}
 	}
 
-	private normalizePath(path: string): string {
-		if (!isString(path)) {
-			throw new Error(
-				`Invalid path: expected a string but received ${typeof path}. Check your @Controller() and route decorator arguments.`
-			)
-		}
-		return normalizePath(path)
-	}
-
-	private registerRouteHandler(
-		method: string,
-		path: string,
-		handlerMiddleware: any[],
-		wrapperHandler: (c: Context) => Promise<any>
-	): void {
-		if (handlerMiddleware.length > 0) {
-			this.hono.on(method.toUpperCase(), [path], ...handlerMiddleware, wrapperHandler)
-		} else {
-			this.hono.on(method.toUpperCase(), [path], wrapperHandler)
-		}
-	}
-
-	private buildRoutePath(prefix: string, version: string, controllerPath: string, methodPath: string): string {
-		return normalizePath(`${prefix}${version}${controllerPath}${methodPath}`)
-	}
-
-	private formatVersionSegment(version: number | typeof VERSION_NEUTRAL | null): string {
-		if (isNil(version)) {
-			return ''
-		}
-		return version === VERSION_NEUTRAL ? '' : `/v${String(version)}`
-	}
-
-	async registerController(controllerClass: Constructor): Promise<void> {
+	private async registerController(controllerClass: Constructor, prefixSegment: string): Promise<void> {
 		if (!this.metadataRepository.hasController(controllerClass)) {
-			throw new Error(`Controller ${controllerClass.name} is not decorated with @Controller()`)
+			throw new Error(`Class ${controllerClass.name} is not decorated with @Controller()`)
 		}
 
-		const controllerPath = this.metadataRepository.getControllerPath(controllerClass) || ''
-		const controllerOptions = this.metadataRepository.getControllerOptions(controllerClass) || {}
-		const routes = this.metadataRepository.getRoutes(controllerClass) || []
-		const parameterMetadata = this.metadataRepository.getParameters(controllerClass) || new Map()
-		const contextIndices = this.metadataRepository.getContextIndices(controllerClass) || new Map()
-
-		const controllerSegment = this.normalizePath(controllerPath)
-
-		const controllerInstance = this.container.resolve(controllerClass)
-
-		const effectiveControllerPrefix =
-			controllerOptions.prefix !== undefined ? controllerOptions.prefix : this.globalPrefix
-
-		const effectiveControllerVersion =
-			controllerOptions.version !== undefined ? controllerOptions.version : this.globalVersion
+		const controllerInstance = await this.container.resolve(controllerClass)
+		const controllerPath = this.metadataRepository.getControllerPath(controllerClass)
+		const controllerOptions = this.metadataRepository.getControllerOptions(controllerClass)
+		const routes = this.metadataRepository.getRoutes(controllerClass)
+		const parameterMetadata = this.metadataRepository.getParameters(controllerClass)
+		const contextIndices = this.metadataRepository.getContextIndices(controllerClass)
 
 		if (routes.length === 0) {
-			throw new Error(
-				`Controller ${controllerClass.name} has no route handlers. Add HTTP method decorators like @Get()`
-			)
+			throw new Error(`Controller ${controllerClass.name} has no registered routes.`)
 		}
 
+		const controllerSegment = addLeadingSlash(stripEndSlash(controllerPath))
+
 		for (const route of routes) {
-			const { path, method, version: routeVersion, prefix: routePrefix } = route
+			const { method, path, version, prefix } = route
+			const methodSegment = addLeadingSlash(stripEndSlash(path))
 
-			const effectivePrefix = routePrefix !== undefined ? routePrefix : effectiveControllerPrefix
-			const prefixSegment = !isNil(effectivePrefix) ? this.normalizePath(effectivePrefix) : ''
+			const effectiveVersion = version ?? controllerOptions.version ?? this.options.routing?.version
+			const effectivePrefix = prefix ?? controllerOptions.prefix
 
-			const effectiveVersion = routeVersion !== undefined ? routeVersion : effectiveControllerVersion
-
-			const methodSegment = this.normalizePath(path)
-
-			if (isNil(effectiveVersion)) {
-				this.registerRoute(
+			if (effectivePrefix === false) {
+				await this.registerRoute(
 					controllerInstance,
 					route,
 					parameterMetadata,
 					contextIndices,
 					controllerClass,
-					prefixSegment,
 					'',
-					controllerSegment,
-					methodSegment,
-					method
-				)
-				continue
-			}
-
-			if (effectiveVersion === VERSION_NEUTRAL) {
-				this.registerRoute(
-					controllerInstance,
-					route,
-					parameterMetadata,
-					contextIndices,
-					controllerClass,
-					prefixSegment,
 					'',
-					controllerSegment,
+					'',
 					methodSegment,
 					method
 				)
-
-				this.registerRoute(
-					controllerInstance,
-					route,
-					parameterMetadata,
-					contextIndices,
-					controllerClass,
-					prefixSegment,
-					'/:version{v[0-9]+}',
-					controllerSegment,
-					methodSegment,
-					method
-				)
-				continue
-			}
-
-			if (Array.isArray(effectiveVersion)) {
-				for (const version of effectiveVersion) {
-					const versionSegment = this.formatVersionSegment(version)
-					this.registerRoute(
-						controllerInstance,
-						route,
-						parameterMetadata,
-						contextIndices,
-						controllerClass,
-						prefixSegment,
-						versionSegment,
-						controllerSegment,
-						methodSegment,
-						method
-					)
-				}
 				continue
 			}
 
 			const versionSegment = this.formatVersionSegment(effectiveVersion)
-			this.registerRoute(
+			await this.registerRoute(
 				controllerInstance,
 				route,
 				parameterMetadata,
@@ -223,7 +132,7 @@ export class RouteManager {
 		}
 	}
 
-	private registerRoute(
+	private async registerRoute(
 		controllerInstance: any,
 		route: RouteDefinition,
 		parameterMetadata: Map<string | symbol, ParameterMetadata[]>,
@@ -234,7 +143,7 @@ export class RouteManager {
 		controllerSegment: string,
 		methodSegment: string,
 		method: string
-	): void {
+	): Promise<void> {
 		const { handlerName } = route
 
 		const fullPath = this.buildRoutePath(prefixSegment, versionSegment, controllerSegment, methodSegment)
@@ -244,9 +153,10 @@ export class RouteManager {
 		const handlerParams = parameterMetadata.get(handlerName) || []
 		const contextIndex = contextIndices.get(handlerName)
 
-		const handlerMiddleware = this.componentManager.getHandlerMiddleware(controllerClass, handlerName)
+		const globalMiddleware = await this.componentManager.getGlobalMiddleware()
+		const handlerMiddleware = await this.componentManager.getHandlerMiddleware(controllerClass, handlerName)
 
-		const handlerPipes = this.componentManager.getHandlerPipes(controllerClass, handlerName)
+		const handlerPipes = await this.componentManager.getHandlerPipes(controllerClass, handlerName)
 
 		this.routeRegistry.registerRoute({
 			controller: controllerClass.name,
@@ -260,12 +170,9 @@ export class RouteManager {
 			parameters: handlerParams
 		})
 
-		const componentManager = this.componentManager
-		const pipelineExecutor = this.pipelineExecutor
-
-		const wrapperHandler = async (c: Context) => {
+		const wrapperHandler = async (c: any) => {
 			try {
-				return await pipelineExecutor.execute({
+				return await this.pipelineExecutor.execute({
 					controllerClass,
 					handlerName,
 					handler,
@@ -275,10 +182,61 @@ export class RouteManager {
 					context: c
 				})
 			} catch (error) {
-				return componentManager.handleException(error, c)
+				return this.componentManager.handleException(error, c)
 			}
 		}
 
-		this.registerRouteHandler(method, fullPath, handlerMiddleware, wrapperHandler)
+		this.registerRouteHandler(method, fullPath, [...globalMiddleware, ...handlerMiddleware], wrapperHandler)
+	}
+
+	private isVersionNeutral(version: any): boolean {
+		return version === VERSION_NEUTRAL || version === 'neutral'
+	}
+
+	private formatVersionSegment(version?: number | typeof VERSION_NEUTRAL | number[]): string {
+		if (version === undefined || this.isVersionNeutral(version)) {
+			return ''
+		}
+		if (Array.isArray(version)) {
+			return `/v${version[0]}`
+		}
+		return `/v${version}`
+	}
+
+	private buildRoutePath(
+		prefixSegment: string,
+		versionSegment: string,
+		controllerSegment: string,
+		methodSegment: string
+	): string {
+		return normalizePath(`${prefixSegment}${versionSegment}${controllerSegment}${methodSegment}`)
+	}
+
+	private registerRouteHandler(
+		method: string,
+		fullPath: string,
+		middleware: any[],
+		handler: (c: any) => Promise<any>
+	): void {
+		const normalizedMethod = method.toLowerCase()
+		switch (normalizedMethod) {
+			case 'get':
+				this.hono.get(fullPath, ...middleware, handler)
+				break
+			case 'post':
+				this.hono.post(fullPath, ...middleware, handler)
+				break
+			case 'put':
+				this.hono.put(fullPath, ...middleware, handler)
+				break
+			case 'delete':
+				this.hono.delete(fullPath, ...middleware, handler)
+				break
+			case 'patch':
+				this.hono.patch(fullPath, ...middleware, handler)
+				break
+			default:
+				throw new Error(`Unsupported HTTP method: ${method}`)
+		}
 	}
 }

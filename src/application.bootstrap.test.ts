@@ -73,7 +73,7 @@ describe('Application bootstrap', () => {
 		expect(container).toBeDefined()
 		expect(container).toBe(testApp.app.getContainer())
 
-		const svc = container.resolve(GreetService)
+		const svc = await container.resolve(GreetService)
 		expect(svc.greet('test')).toBe('Hello, test')
 	})
 

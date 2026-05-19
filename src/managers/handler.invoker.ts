@@ -8,7 +8,13 @@ import { isNil, isString } from '../utils'
 export class HandlerInvoker {
 	async invoke({ handler, args, context, contextIndex }: HandlerInvocationInput): Promise<unknown> {
 		const result = await handler(...args)
+		return this.mapResult(result, context, contextIndex)
+	}
 
+	/**
+	 * Maps a raw handler result to a Hono response.
+	 */
+	mapResult(result: any, context: Context, contextIndex?: number): any {
 		if (contextIndex !== undefined) {
 			return result
 		}

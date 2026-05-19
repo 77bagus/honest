@@ -14,14 +14,16 @@ import type {
 	IMiddleware,
 	IPipe,
 	MiddlewareType,
-	PipeType
+	PipeType,
+	HonestInterceptor,
+	InterceptorType
 } from '../interfaces'
 import { NoopLogger } from '../loggers'
 import { type ComponentType, type ComponentTypeMap } from '../registries'
 import type { Constructor } from '../types'
 import { isObject } from '../utils'
 
-type ComponentInstance = MiddlewareType | GuardType | PipeType | FilterType
+type ComponentInstance = MiddlewareType | GuardType | PipeType | FilterType | InterceptorType
 
 /**
  * Manager class for handling all component types in the Honest framework.
@@ -36,7 +38,8 @@ export class ComponentManager {
 		['middleware', new Set<MiddlewareType>()],
 		['guard', new Set<GuardType>()],
 		['pipe', new Set<PipeType>()],
-		['filter', new Set<FilterType>()]
+		['filter', new Set<FilterType>()],
+		['interceptor', new Set<InterceptorType>()]
 	])
 
 	constructor(
@@ -54,6 +57,7 @@ export class ComponentManager {
 			guards?: GuardType[]
 			pipes?: PipeType[]
 			filters?: FilterType[]
+			interceptors?: InterceptorType[]
 		}
 	}): void {
 		const components = options.components || {}
@@ -72,6 +76,10 @@ export class ComponentManager {
 
 		if (components.filters) {
 			this.registerGlobal('filter', ...components.filters)
+		}
+
+		if (components.interceptors) {
+			this.registerGlobal('interceptor', ...components.interceptors)
 		}
 	}
 
@@ -103,61 +111,70 @@ export class ComponentManager {
 
 	// -- Middleware --
 
-	resolveMiddleware(middlewareItems: MiddlewareType[]): ((c: Context, next: Next) => Promise<Response | void>)[] {
-		return middlewareItems.map((middlewareItem) => {
-			if (isObject(middlewareItem) && 'use' in middlewareItem) {
-				return (middlewareItem as IMiddleware).use.bind(middlewareItem)
-			}
+	async resolveMiddleware(
+		middlewareItems: MiddlewareType[]
+	): Promise<((c: Context, next: Next) => Promise<Response | void>)[]> {
+		const resolved = await Promise.all(
+			middlewareItems.map(async (middlewareItem) => {
+				if (isObject(middlewareItem) && 'use' in middlewareItem) {
+					return (middlewareItem as IMiddleware).use.bind(middlewareItem)
+				}
 
-			const middleware = this.container.resolve(middlewareItem as Constructor<IMiddleware>)
-			return middleware.use.bind(middleware)
-		})
+				const middleware = await this.container.resolve(middlewareItem as Constructor<IMiddleware>)
+				return middleware.use.bind(middleware)
+			})
+		)
+		return resolved
 	}
 
-	getHandlerMiddleware(
+	async getHandlerMiddleware(
 		controller: Constructor,
 		handlerName: string | symbol
-	): ((c: Context, next: Next) => Promise<Response | void>)[] {
+	): Promise<((c: Context, next: Next) => Promise<Response | void>)[]> {
 		const controllerMiddleware = this.metadataRepository.getControllerComponents('middleware', controller)
 		const handlerMiddleware = this.metadataRepository.getHandlerComponents('middleware', controller, handlerName)
 		return this.resolveMiddleware([...controllerMiddleware, ...handlerMiddleware] as MiddlewareType[])
 	}
 
-	getGlobalMiddleware(): ((c: Context, next: Next) => Promise<Response | void>)[] {
+	async getGlobalMiddleware(): Promise<((c: Context, next: Next) => Promise<Response | void>)[]> {
 		const globalMiddleware = Array.from(this.globalComponents.get('middleware') || [])
 		return this.resolveMiddleware(globalMiddleware as MiddlewareType[])
 	}
 
 	// -- Guards --
 
-	resolveGuards(guardItems: GuardType[]): IGuard[] {
-		return guardItems.map((guardItem) => {
-			if (isObject(guardItem) && 'canActivate' in guardItem) {
-				return guardItem as IGuard
-			}
+	async resolveGuards(guardItems: GuardType[]): Promise<IGuard[]> {
+		return Promise.all(
+			guardItems.map(async (guardItem) => {
+				if (isObject(guardItem) && 'canActivate' in guardItem) {
+					return guardItem as IGuard
+				}
 
-			return this.container.resolve(guardItem as Constructor<IGuard>)
-		})
+				return await this.container.resolve(guardItem as Constructor<IGuard>)
+			})
+		)
 	}
 
-	getHandlerGuards(controller: Constructor, handlerName: string | symbol): IGuard[] {
+	async getHandlerGuards(controller: Constructor, handlerName: string | symbol): Promise<IGuard[]> {
 		const guardItems = this.getComponents('guard', controller, handlerName)
 		return this.resolveGuards(guardItems as GuardType[])
 	}
 
 	// -- Pipes --
 
-	resolvePipes(pipeItems: PipeType[]): IPipe[] {
-		return pipeItems.map((pipeItem) => {
-			if (isObject(pipeItem) && 'transform' in pipeItem) {
-				return pipeItem as IPipe
-			}
+	async resolvePipes(pipeItems: PipeType[]): Promise<IPipe[]> {
+		return Promise.all(
+			pipeItems.map(async (pipeItem) => {
+				if (isObject(pipeItem) && 'transform' in pipeItem) {
+					return pipeItem as IPipe
+				}
 
-			return this.container.resolve(pipeItem as Constructor<IPipe>)
-		})
+				return await this.container.resolve(pipeItem as Constructor<IPipe>)
+			})
+		)
 	}
 
-	getHandlerPipes(controller: Constructor, handlerName: string | symbol): IPipe[] {
+	async getHandlerPipes(controller: Constructor, handlerName: string | symbol): Promise<IPipe[]> {
 		const pipeItems = this.getComponents('pipe', controller, handlerName)
 		return this.resolvePipes(pipeItems as PipeType[])
 	}
@@ -170,6 +187,25 @@ export class ComponentManager {
 		}
 
 		return transformedValue
+	}
+
+	// -- Interceptors --
+
+	async resolveInterceptors(interceptorItems: InterceptorType[]): Promise<HonestInterceptor[]> {
+		return Promise.all(
+			interceptorItems.map(async (interceptorItem) => {
+				if (isObject(interceptorItem) && 'intercept' in interceptorItem) {
+					return interceptorItem as HonestInterceptor
+				}
+
+				return await this.container.resolve(interceptorItem as Constructor<HonestInterceptor>)
+			})
+		)
+	}
+
+	async getHandlerInterceptors(controller: Constructor, handlerName: string | symbol): Promise<HonestInterceptor[]> {
+		const interceptorItems = this.getComponents('interceptor', controller, handlerName)
+		return this.resolveInterceptors(interceptorItems as InterceptorType[])
 	}
 
 	// -- Filters --
@@ -220,7 +256,7 @@ export class ComponentManager {
 			if (isObject(filterItem) && 'catch' in filterItem) {
 				filter = filterItem as IFilter
 			} else {
-				filter = this.container.resolve(filterItem as Constructor<IFilter>)
+				filter = await this.container.resolve(filterItem as Constructor<IFilter>)
 			}
 
 			try {
@@ -280,7 +316,7 @@ export class ComponentManager {
 			for (const serviceClass of moduleOptions.services) {
 				this.container.addProvider(serviceClass)
 				const token = typeof serviceClass === 'function' ? serviceClass : serviceClass.provide
-				const instance = this.container.resolve(token as Constructor)
+				const instance = await this.container.resolve(token as Constructor)
 				instantiatedInThisModule.push(instance)
 			}
 		}
@@ -288,7 +324,7 @@ export class ComponentManager {
 		if (moduleOptions.controllers && moduleOptions.controllers.length > 0) {
 			for (const controllerClass of moduleOptions.controllers) {
 				this.container.addProvider(controllerClass)
-				const instance = this.container.resolve(controllerClass)
+				const instance = await this.container.resolve(controllerClass)
 				instantiatedInThisModule.push(instance)
 				controllers.push(controllerClass)
 			}

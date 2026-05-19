@@ -64,19 +64,21 @@ export class Container implements DiContainer {
 	 * @param token - The token or class constructor to resolve
 	 * @returns An instance of the requested dependency
 	 */
-	resolve<T>(token: ProviderToken): T {
+	async resolve<T>(token: ProviderToken): Promise<T> {
 		return this.resolveWithTracking(token, new Set<ProviderToken>())
 	}
 
 	/**
 	 * Internal recursive resolver with circular dependency tracking
 	 */
-	private resolveWithTracking<T>(
+	private async resolveWithTracking<T>(
 		token: ProviderToken,
 		resolving: Set<ProviderToken>,
 		isForwardRef = false,
 		consumer?: Constructor
-	): T {
+	): Promise<T> {
+		const tokenName = typeof token === 'function' ? token.name : String(token)
+
 		// Visibility check only applies to class-based providers/consumers
 		if (
 			this.visibilityChecker &&
@@ -87,10 +89,10 @@ export class Container implements DiContainer {
 			this.emitLog({
 				level: 'error',
 				category: 'di',
-				message: `Encapsulation violation: ${token.name} is not visible to ${consumer.name}. Did you forget to export it from its module?`
+				message: `Encapsulation violation: ${tokenName} is not visible to ${consumer.name}. Did you forget to export it from its module?`
 			})
 			throw new Error(
-				`Encapsulation violation: ${token.name} is not visible to ${consumer.name}. Check your @Module() exports.`
+				`Encapsulation violation: ${tokenName} is not visible to ${consumer.name}. Check your @Module() exports.`
 			)
 		}
 
@@ -98,42 +100,59 @@ export class Container implements DiContainer {
 			this.emitLog({
 				level: 'debug',
 				category: 'di',
-				message: `Resolved ${typeof token === 'function' ? token.name : String(token)} from DI cache`
+				message: `Resolved ${tokenName} from DI cache`
 			})
 			return this.instances.get(token)
 		}
 
 		if (resolving.has(token)) {
+			const cycle = [...resolving.keys(), token]
+				.map((t) => (typeof t === 'function' ? t.name : String(t)))
+				.join(' -> ')
+
 			if (!isForwardRef) {
-				const cycle = [...resolving.keys(), token]
-					.map((t) => (typeof t === 'function' ? t.name : String(t)))
-					.join(' -> ')
 				this.emitLog({
 					level: 'error',
 					category: 'di',
-					message: `Circular dependency detected while resolving ${String(token)}`,
+					message: `Circular dependency detected while resolving ${tokenName}`,
 					details: { cycle }
 				})
 				throw new Error(`Circular dependency detected: ${cycle}`)
 			}
 
-			const cycle = [...resolving.keys(), token]
-				.map((t) => (typeof t === 'function' ? t.name : String(t)))
-				.join(' -> ')
 			this.emitLog({
 				level: 'debug',
 				category: 'di',
-				message: `Circular dependency detected while resolving ${String(token)}, returning proxy`,
+				message: `Circular dependency detected while resolving ${tokenName}, returning proxy`,
 				details: { cycle }
 			})
 
 			// Basic proxy to resolve circular dependency
 			return new Proxy({} as any, {
 				get: (t, prop) => {
+					// Don't trigger resolution error for internal JS symbols or common properties
+					if (
+						prop === 'toString' ||
+						prop === Symbol.toStringTag ||
+						prop === 'valueOf' ||
+						prop === 'constructor' ||
+						prop === 'toJSON' ||
+						prop === Symbol.toPrimitive
+					) {
+						return () => `[HonestProxy:${tokenName}]`
+					}
+					// Important: prevent Proxy from being treated as a Thenable (Promise)
+					if (prop === 'then') {
+						return undefined
+					}
 					const instance = this.instances.get(token)
 					if (!instance) {
+						// Fallback for some library inspection tools (like node's util.inspect or bun's internal checks)
+						if (typeof prop === 'string' && (prop.startsWith('__') || prop === 'as-instance')) {
+							return undefined
+						}
 						throw new Error(
-							`Circular dependency proxy accessed before ${String(token)} was instantiated. Cycle: ${cycle}`
+							`Circular dependency detected: proxy accessed before ${tokenName} was instantiated. Cycle: ${cycle}`
 						)
 					}
 					return instance[prop]
@@ -145,38 +164,40 @@ export class Container implements DiContainer {
 		this.emitLog({
 			level: 'debug',
 			category: 'di',
-			message: `Resolving ${typeof token === 'function' ? token.name : String(token)}`,
+			message: `Resolving ${tokenName}`,
 			details: { resolving: [...resolving].map((t) => (typeof t === 'function' ? t.name : String(t))) }
 		})
 
 		const provider = this.providers.get(token) || (typeof token === 'function' ? token : undefined)
 
 		if (!provider) {
-			throw new Error(`No provider found for token: ${String(token)}`)
+			throw new Error(
+				`Cannot resolve ${tokenName}: it is not decorated with @Service(). Did you forget to add @Service() to the class?`
+			)
 		}
 
 		let instance: T
 
 		if (typeof provider === 'function') {
 			// Class Provider (direct constructor)
-			instance = this.instantiateClass(provider as Constructor<T>, resolving)
+			instance = await this.instantiateClass(provider as Constructor<T>, resolving)
 		} else if ('useValue' in provider) {
 			// Value Provider
 			instance = (provider as ValueProvider).useValue
 		} else if ('useClass' in provider) {
 			// Class Provider (via useClass)
-			instance = this.instantiateClass((provider as ClassProvider).useClass, resolving)
+			instance = await this.instantiateClass((provider as ClassProvider).useClass, resolving)
 		} else if ('useFactory' in provider) {
 			// Factory Provider
 			const factoryProvider = provider as FactoryProvider
 			const inject = factoryProvider.inject || []
-			const args = inject.map((argToken) => this.resolveWithTracking(argToken, new Set(resolving)))
-			const result = factoryProvider.useFactory(...args)
-			// Note: We don't handle async factories here yet as per audit point 4 (Phase 1 is sync)
-			// Phase 2 will add async support.
-			instance = result as T
+			const args = []
+			for (const argToken of inject) {
+				args.push(await this.resolveWithTracking(argToken, new Set(resolving)))
+			}
+			instance = await factoryProvider.useFactory(...args)
 		} else {
-			throw new Error(`Invalid provider definition for token: ${String(token)}`)
+			throw new Error(`Invalid provider definition for token: ${tokenName}`)
 		}
 
 		this.instances.set(token, instance)
@@ -184,38 +205,30 @@ export class Container implements DiContainer {
 		this.emitLog({
 			level: 'debug',
 			category: 'di',
-			message: `Created instance for ${typeof token === 'function' ? token.name : String(token)}`
+			message: `Created instance for ${tokenName}`
 		})
 
 		return instance
 	}
 
-	private instantiateClass<T>(target: Constructor<T>, resolving: Set<ProviderToken>): T {
+	private async instantiateClass<T>(target: Constructor<T>, resolving: Set<ProviderToken>): Promise<T> {
 		const paramTypes = Reflect.getMetadata('design:paramtypes', target) || []
 		const injectTokens = MetadataRegistry.getInjectTokens(target)
 
 		if (target.length > 0 && paramTypes.length === 0 && injectTokens.size === 0) {
 			if (!this.serviceRegistry.isService(target)) {
-				this.emitLog({
-					level: 'error',
-					category: 'di',
-					message: `Cannot resolve ${target.name}: missing @Service() decorator`
-				})
 				throw new Error(
 					`Cannot resolve ${target.name}: it is not decorated with @Service(). Did you forget to add @Service() to the class?`
 				)
 			}
-			this.emitLog({
-				level: 'error',
-				category: 'di',
-				message: `Cannot resolve ${target.name}: missing constructor metadata`
-			})
 			throw new Error(
 				`Cannot resolve dependencies for ${target.name}: constructor metadata is missing. Ensure 'reflect-metadata' is imported and 'emitDecoratorMetadata' is enabled.`
 			)
 		}
 
-		const dependencies = paramTypes.map((paramType: Constructor, index: number) => {
+		const dependencies: any[] = []
+		for (let index = 0; index < paramTypes.length; index++) {
+			const paramType = paramTypes[index]
 			const token = injectTokens.get(index)
 			const hasForwardRef = !!(token && typeof token === 'object' && 'forwardRef' in token)
 			const effectiveToken = token ? resolveForwardRef(token) : paramType
@@ -226,17 +239,29 @@ export class Container implements DiContainer {
 				effectiveToken === Array ||
 				effectiveToken === Function
 			) {
-				this.emitLog({
-					level: 'error',
-					category: 'di',
-					message: `Cannot resolve dependency at index ${index} of ${target.name}`
-				})
+				const name = typeof target === 'function' ? target.name : String(target)
 				throw new Error(
-					`Cannot resolve dependency at index ${index} of ${target.name}. Use concrete class types or @Inject() for constructor dependencies.`
+					`Cannot resolve dependency at index ${index} of ${name}. Use concrete class types or @Inject() for constructor dependencies.`
 				)
 			}
-			return this.resolveWithTracking(effectiveToken, new Set(resolving), hasForwardRef, target)
-		})
+
+			let dependency: any
+			try {
+				dependency = await this.resolveWithTracking(effectiveToken, new Set(resolving), hasForwardRef, target)
+			} catch (error: any) {
+				// Re-throw if it's already an Honest error message we expect in tests
+				if (error.message.includes('Cannot resolve dependency at index')) {
+					throw error
+				}
+				throw new Error(
+					`Cannot resolve dependency at index ${index} of ${target.name}. Cause: ${error.message}`,
+					{
+						cause: error
+					}
+				)
+			}
+			dependencies.push(dependency)
+		}
 
 		return new target(...dependencies)
 	}

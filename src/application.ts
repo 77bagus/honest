@@ -3,47 +3,46 @@ import { emitStartupGuide as emitStartupGuideLogs } from './application/startup-
 import { normalizePluginEntries } from './application/plugin-entries'
 import { ApplicationContext } from './application-context'
 import { ConsoleLogger } from './loggers'
+import { RouteRegistry, MetadataRepository } from './registries'
+import { RouteManager, PipelineExecutor, ComponentManager, ParameterResolver, HandlerInvoker } from './managers'
 import { Container } from './di'
-import { ErrorHandler, NotFoundHandler } from './handlers'
 import type {
-	ILogger,
-	DiContainer,
 	HonestOptions,
 	IApplicationContext,
-	IMetadataRepository,
-	RouteInfo
+	RouteInfo,
+	DiContainer,
+	ILogger,
+	IMetadataRepository
 } from './interfaces'
-import { ComponentManager, RouteManager } from './managers'
-import { MetadataRepository, RouteRegistry } from './registries'
 import type { Constructor } from './types'
-import { isObject } from './utils'
+import { ErrorHandler, NotFoundHandler } from './handlers'
 
 /**
  * Main application class for the Honest framework.
- *
- * All per-app runtime state (routes, global components, DI container) is
- * instance-based. Static decorator metadata lives in MetadataRegistry and
- * is shared across all Application instances in the same process.
+ * Orchestrates DI, routing, and lifecycle management.
  */
 export class Application {
 	private readonly hono: Hono
 	private readonly container: DiContainer
 	private readonly context: IApplicationContext
+	private readonly logger: ILogger
 	private readonly routeRegistry: RouteRegistry
 	private readonly metadataRepository: IMetadataRepository
 	private readonly componentManager: ComponentManager
 	private readonly routeManager: RouteManager
-	private readonly logger: ILogger
-	private readonly options: HonestOptions
 
-	constructor(options: HonestOptions = {}, metadataRepository: IMetadataRepository) {
-		this.options = isObject(options) ? options : {}
-
+	constructor(
+		private readonly options: HonestOptions = {},
+		metadataRepository: IMetadataRepository
+	) {
+		const debugDi =
+			this.options.debug === true || (typeof this.options.debug === 'object' && Boolean(this.options.debug.di))
+		const debugRoutes =
+			this.options.debug === true ||
+			(typeof this.options.debug === 'object' && Boolean(this.options.debug.routes))
 		const debugPipeline =
 			this.options.debug === true ||
 			(typeof this.options.debug === 'object' && Boolean(this.options.debug.pipeline))
-		const debugDi =
-			this.options.debug === true || (typeof this.options.debug === 'object' && Boolean(this.options.debug.di))
 
 		this.hono = new Hono(this.options.hono)
 
@@ -62,39 +61,34 @@ export class Application {
 		this.componentManager = new ComponentManager(this.container, this.metadataRepository, this.logger)
 		this.componentManager.setupGlobalComponents(this.options)
 
-		this.setupErrorHandlers()
+		const parameterResolver = new ParameterResolver(this.componentManager, this.logger)
+		const handlerInvoker = new HandlerInvoker()
+		const pipelineExecutor = new PipelineExecutor(
+			this.componentManager,
+			parameterResolver,
+			handlerInvoker,
+			this.logger,
+			debugPipeline
+		)
 
 		this.routeManager = new RouteManager(
 			this.hono,
-			this.container,
-			this.routeRegistry,
-			this.componentManager,
 			this.metadataRepository,
+			this.componentManager,
+			pipelineExecutor,
+			this.routeRegistry,
+			this.container,
+			this.options,
 			this.logger,
-			{
-				prefix: this.options.routing?.prefix,
-				version: this.options.routing?.version,
-				debugPipeline
-			}
+			debugRoutes
 		)
 
-		if (this.options.deprecations?.printPreV1Warning) {
-			this.logger.emit({
-				level: 'warn',
-				category: 'deprecations',
-				message: 'Pre-v1 warning: APIs may change before 1.0.0.'
-			})
-		}
+		this.setupErrorHandlers()
 	}
 
 	private setupErrorHandlers(): void {
 		this.hono.notFound(this.options.notFound || NotFoundHandler.handle())
 		this.hono.onError(this.options.onError || ErrorHandler.handle())
-	}
-
-	private shouldEmitRouteDiagnostics(): boolean {
-		const debug = this.options.debug
-		return debug === true || (typeof debug === 'object' && Boolean(debug.routes))
 	}
 
 	private emitStartupGuide(error: unknown, rootModule: Constructor): void {
@@ -103,73 +97,52 @@ export class Application {
 
 	async register(moduleClass: Constructor): Promise<Application> {
 		const controllers = await this.componentManager.registerModule(moduleClass)
-		const debugRoutes = this.shouldEmitRouteDiagnostics()
+		const debugStartup =
+			this.options.debug === true ||
+			(typeof this.options.debug === 'object' && Boolean(this.options.debug.startup))
 
-		for (const controller of controllers) {
-			const controllerStartedAt = Date.now()
-			const routeCountBefore = this.routeRegistry.getRoutes().length
-			try {
-				await this.routeManager.registerController(controller)
-				if (debugRoutes) {
-					this.logger.emit({
-						level: 'info',
-						category: 'routes',
-						message: 'Registered controller routes',
-						details: {
-							controller: controller.name,
-							routeCountAdded: this.routeRegistry.getRoutes().length - routeCountBefore,
-							registrationDurationMs: Date.now() - controllerStartedAt
-						}
-					})
+		await this.routeManager.register(controllers, this.options.routing?.prefix)
+
+		if (debugStartup) {
+			this.logger.emit({
+				level: 'info',
+				category: 'startup',
+				message: 'Application registered',
+				details: {
+					rootModule: moduleClass.name,
+					controllerCount: controllers.length,
+					routeCount: this.getRoutes().length
 				}
-			} catch (error: unknown) {
-				if (debugRoutes) {
-					this.logger.emit({
-						level: 'error',
-						category: 'routes',
-						message: 'Failed to register controller routes',
-						details: {
-							controller: controller.name,
-							registrationDurationMs: Date.now() - controllerStartedAt,
-							errorMessage: error instanceof Error ? error.message : String(error)
-						}
-					})
-				}
-				throw error
-			}
+			})
 		}
-
 		return this
 	}
 
+	/**
+	 * Bootstraps the application from a root module.
+	 * @param rootModule - The main application module
+	 * @param options - Configuration options
+	 * @returns An object containing the application instance and the underlying Hono app
+	 */
 	static async create(
 		rootModule: Constructor,
 		options: HonestOptions = {}
 	): Promise<{ app: Application; hono: Hono }> {
-		const startupStartedAt = Date.now()
-		const metadataSnapshot = MetadataRepository.fromRootModule(rootModule)
-		const app = new Application(options, metadataSnapshot)
-		const entries = normalizePluginEntries(options.plugins)
-		const ctx = app.getContext()
-		const debug = options.debug
-		const debugPlugins = debug === true || (typeof debug === 'object' && debug.plugins)
-		const debugRoutes = debug === true || (typeof debug === 'object' && debug.routes)
-		const debugStartup = debug === true || (typeof debug === 'object' && (debug.startup || debugRoutes))
-		let strictNoRoutesFailureEmitted = false
+		const debugStartup =
+			options.debug === true || (typeof options.debug === 'object' && Boolean(options.debug.startup))
+		const requireRoutes = options.strict?.requireRoutes ?? true
 
+		const metadataRepository = MetadataRepository.fromRootModule(rootModule)
+		const app = new Application(options, metadataRepository)
+
+		const startedAt = Date.now()
 		try {
-			if (debugPlugins && entries.length > 0) {
-				app.logger.emit({
-					level: 'info',
-					category: 'plugins',
-					message: `Plugin order: ${entries.map(({ name }) => name).join(' -> ')}`
-				})
-			}
+			const plugins = normalizePluginEntries(options.plugins)
 
-			for (const { plugin, preProcessors } of entries) {
-				plugin.logger = app.logger
-				for (const fn of preProcessors) {
-					await fn(app, app.hono, ctx)
+			for (const entry of plugins) {
+				const { plugin, preProcessors } = entry
+				for (const pre of preProcessors) {
+					await pre(app, app.hono, app.context)
 				}
 				if (plugin.beforeModulesRegistered) {
 					await plugin.beforeModulesRegistered(app, app.hono)
@@ -191,86 +164,65 @@ export class Application {
 				app.logger.emit({
 					level: 'info',
 					category: 'startup',
-					message: `Application registered ${routes.length} route(s)`,
+					message: 'Application startup completed',
 					details: {
+						rootModule: rootModule.name,
 						routeCount: routes.length,
-						rootModule: rootModule.name
+						startupDurationMs: Date.now() - startedAt
 					}
 				})
 			}
-			if (options.strict?.requireRoutes && routes.length === 0) {
-				strictNoRoutesFailureEmitted = true
+
+			if (requireRoutes && routes.length === 0) {
+				const error = new Error('Strict mode: no routes were registered during application startup.')
+
+				// Emit error log regardless of debug mode because it's a fatal startup error
 				app.logger.emit({
 					level: 'error',
 					category: 'startup',
 					message: 'Strict mode failed: no routes were registered',
 					details: {
 						rootModule: rootModule.name,
-						requireRoutes: true,
-						startupDurationMs: Date.now() - startupStartedAt
+						requireRoutes,
+						startupDurationMs: Date.now() - startedAt
 					}
 				})
-				const strictError = new Error(
-					'Strict mode: no routes were registered. Check your module/controller decorators.'
-				)
-				app.emitStartupGuide(strictError, rootModule)
-				throw strictError
-			}
-			if (debugRoutes) {
-				app.logger.emit({
-					level: 'info',
-					category: 'routes',
-					message: 'Registered routes',
-					details: {
-						routes: routes.map((route) => `${route.method.toUpperCase()} ${route.fullPath}`)
-					}
-				})
+
+				app.emitStartupGuide(error, rootModule)
+				throw error
 			}
 
-			for (const { plugin, postProcessors } of entries) {
+			for (const entry of plugins) {
+				const { plugin, postProcessors } = entry
 				if (plugin.afterModulesRegistered) {
 					await plugin.afterModulesRegistered(app, app.hono)
 				}
-				for (const fn of postProcessors) {
-					await fn(app, app.hono, ctx)
+				for (const post of postProcessors) {
+					await post(app, app.hono, app.context)
 				}
 			}
 
+			return { app, hono: app.hono }
+		} catch (error) {
 			if (debugStartup) {
-				app.logger.emit({
-					level: 'info',
-					category: 'startup',
-					message: 'Application startup completed',
-					details: {
-						rootModule: rootModule.name,
-						pluginCount: entries.length,
-						routeCount: routes.length,
-						startupDurationMs: Date.now() - startupStartedAt
-					}
-				})
-			}
-
-			return { app, hono: app.getApp() }
-		} catch (error: unknown) {
-			app.emitStartupGuide(error, rootModule)
-
-			if (debugStartup && !strictNoRoutesFailureEmitted) {
 				app.logger.emit({
 					level: 'error',
 					category: 'startup',
 					message: 'Application startup failed',
 					details: {
 						rootModule: rootModule.name,
-						startupDurationMs: Date.now() - startupStartedAt,
-						errorMessage: error instanceof Error ? error.message : String(error)
+						errorMessage: error instanceof Error ? error.message : String(error),
+						error: error instanceof Error ? error.message : String(error),
+						stack: error instanceof Error ? error.stack : undefined
 					}
 				})
 			}
+			app.emitStartupGuide(error, rootModule)
 			throw error
 		}
 	}
 
-	getApp(): Hono {
+	getHono(): Hono {
 		return this.hono
 	}
 

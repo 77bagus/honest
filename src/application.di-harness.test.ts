@@ -9,29 +9,34 @@ afterEach(() => {
 })
 
 describe('createServiceTestContainer', () => {
-	test('DI error message tells you to add @Service() when decorator is missing', () => {
+	test('DI error message tells you to add @Service() when decorator is missing', async () => {
 		class InjectedStub {}
 		class NotAService {
 			constructor(public dep: InjectedStub) {}
 		}
 
-		const harness = createServiceTestContainer()
-		expect(() => harness.get(NotAService)).toThrow('not decorated with @Service()')
+		const harness = await createServiceTestContainer()
+		try {
+			await harness.get(NotAService)
+			throw new Error('Should have thrown')
+		} catch (error: any) {
+			expect(error.message).toContain('not decorated with @Service()')
+		}
 	})
 
-	test('container.has() returns false for unresolved and true after resolve', () => {
+	test('container.has() returns false for unresolved and true after resolve', async () => {
 		const TestController = createTestController()
-		const harness = createServiceTestContainer()
+		const harness = await createServiceTestContainer()
 		expect(harness.has(TestController)).toBe(false)
 
-		harness.get(TestController)
+		await harness.get(TestController)
 		expect(harness.has(TestController)).toBe(true)
 	})
 
-	test('container.clear() removes all cached instances', () => {
+	test('container.clear() removes all cached instances', async () => {
 		const TestController = createTestController()
-		const harness = createServiceTestContainer()
-		harness.get(TestController)
+		const harness = await createServiceTestContainer()
+		await harness.get(TestController)
 		expect(harness.has(TestController)).toBe(true)
 
 		harness.clear()

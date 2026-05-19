@@ -5,7 +5,9 @@ import type { CreateServiceTestContainerOptions, ServiceTestOverride, TestServic
 /**
  * Create a lightweight DI container for service-only tests without HTTP bootstrap.
  */
-export function createServiceTestContainer(options: CreateServiceTestContainerOptions = {}): TestServiceContainer {
+export async function createServiceTestContainer(
+	options: CreateServiceTestContainerOptions = {}
+): Promise<TestServiceContainer> {
 	const logger = options.logger ?? new NoopLogger()
 	const container = new Container(undefined, logger, Boolean(options.debugDi))
 
@@ -15,13 +17,13 @@ export function createServiceTestContainer(options: CreateServiceTestContainerOp
 	}
 
 	for (const service of options.preload ?? []) {
-		container.resolve(service)
+		await container.resolve(service)
 	}
 
 	return {
 		container,
-		get(target) {
-			return container.resolve(target)
+		async get(target) {
+			return await container.resolve(target)
 		},
 		register(target, instance) {
 			container.register(target, instance)

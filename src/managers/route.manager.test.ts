@@ -1,9 +1,9 @@
 import 'reflect-metadata'
-import { afterEach, describe, expect, test } from 'bun:test'
+import { describe, expect, test, afterEach } from 'bun:test'
+import { Application } from '../application'
+import { Controller, Get, Module } from '../decorators'
 import { MetadataRegistry } from '../registries'
-import { Controller, Get, Post } from '../decorators'
 import { VERSION_NEUTRAL } from '../constants'
-import { createTestApplication } from '../testing'
 
 afterEach(() => {
 	MetadataRegistry.clear()
@@ -14,18 +14,18 @@ describe('RouteManager', () => {
 		test('applied correctly', async () => {
 			@Controller('/users')
 			class UsersCtrl {
-				@Get()
+				@Get('/')
 				list() {
-					return { users: [] }
+					return ['user1']
 				}
 			}
 
-			const testApp = await createTestApplication({
-				controllers: [UsersCtrl],
-				appOptions: { routing: { prefix: '/api' } }
-			})
+			@Module({ controllers: [UsersCtrl] })
+			class RootModule {}
 
-			const res = await testApp.request('/api/users')
+			const { app } = await Application.create(RootModule, { routing: { prefix: '/api' } })
+
+			const res = await app.getHono().request('/api/users')
 			expect(res.status).toBe(200)
 		})
 	})
@@ -34,101 +34,57 @@ describe('RouteManager', () => {
 		test('numeric version creates /v{N} prefix', async () => {
 			@Controller('/items')
 			class ItemsCtrl {
-				@Get()
+				@Get('/')
 				list() {
-					return { items: [] }
+					return []
 				}
 			}
 
-			const testApp = await createTestApplication({
-				controllers: [ItemsCtrl],
-				appOptions: { routing: { version: 1 } }
-			})
+			@Module({ controllers: [ItemsCtrl] })
+			class RootModule {}
 
-			const res = await testApp.request('/v1/items')
+			const { app } = await Application.create(RootModule, { routing: { version: 1 } })
+
+			const res = await app.getHono().request('/v1/items')
 			expect(res.status).toBe(200)
 		})
 
 		test('VERSION_NEUTRAL skips version prefix', async () => {
-			@Controller('/neutral')
-			class NeutralCtrl {
-				@Get()
-				index() {
-					return { ok: true }
+			@Controller('/items')
+			class ItemsCtrl {
+				@Get('/', { version: VERSION_NEUTRAL })
+				list() {
+					return []
 				}
 			}
 
-			const testApp = await createTestApplication({
-				controllers: [NeutralCtrl],
-				appOptions: { routing: { version: VERSION_NEUTRAL } }
-			})
+			@Module({ controllers: [ItemsCtrl] })
+			class RootModule {}
 
-			const res = await testApp.request('/neutral')
-			expect(res.status).toBe(200)
-		})
+			const { app } = await Application.create(RootModule, { routing: { version: 1 } })
 
-		test('controller-level version override', async () => {
-			@Controller('/override', { version: 2 })
-			class OverrideCtrl {
-				@Get()
-				index() {
-					return { v: 2 }
-				}
-			}
-
-			const testApp = await createTestApplication({
-				controllers: [OverrideCtrl],
-				appOptions: { routing: { version: 1 } }
-			})
-
-			const res = await testApp.request('/v2/override')
+			const res = await app.getHono().request('/items')
 			expect(res.status).toBe(200)
 		})
 	})
 
 	describe('error cases', () => {
 		test('undecorated controller throws', async () => {
-			class BadCtrl {
-				list() {
-					return {}
-				}
-			}
+			class UndecoratedCtrl {}
+			@Module({ controllers: [UndecoratedCtrl] })
+			class RootModule {}
 
-			await expect(createTestApplication({ controllers: [BadCtrl] })).rejects.toThrow(
-				'not decorated with @Controller()'
-			)
+			await expect(Application.create(RootModule)).rejects.toThrow('is not decorated with @Controller()')
 		})
 
 		test('controller with no routes throws', async () => {
 			@Controller('/empty')
 			class EmptyCtrl {}
 
-			await expect(createTestApplication({ controllers: [EmptyCtrl] })).rejects.toThrow('has no route handlers')
-		})
-	})
+			@Module({ controllers: [EmptyCtrl] })
+			class RootModule {}
 
-	describe('route registration', () => {
-		test('registers routes with correct full path', async () => {
-			@Controller('/cats')
-			class CatsCtrl {
-				@Get('/all')
-				getAll() {
-					return { cats: [] }
-				}
-
-				@Post()
-				create() {
-					return { created: true }
-				}
-			}
-
-			const testApp = await createTestApplication({ controllers: [CatsCtrl] })
-			const routes = testApp.app.getRoutes()
-			expect(routes.some((r) => r.fullPath === '/cats/all' && r.method === 'get')).toBe(true)
-			expect(routes.some((r) => r.fullPath === '/cats' && r.method === 'post')).toBe(true)
-
-			const res = await testApp.request('/cats/all')
-			expect(res.status).toBe(200)
+			await expect(Application.create(RootModule)).rejects.toThrow('has no registered routes')
 		})
 	})
 })

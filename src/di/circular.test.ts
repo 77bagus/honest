@@ -50,11 +50,11 @@ class ModuleB {}
 class ModuleA {}
 
 describe('Circular Dependency Resolution', () => {
-	it('should resolve circular dependencies using forwardRef and @Inject', () => {
+	it('should resolve circular dependencies using forwardRef and @Inject', async () => {
 		const container = new Container()
 
-		const instanceA = container.resolve(ServiceA)
-		const instanceB = container.resolve(ServiceB)
+		const instanceA = await container.resolve(ServiceA)
+		const instanceB = await container.resolve(ServiceB)
 
 		expect(instanceA).toBeInstanceOf(ServiceA)
 		expect(instanceB).toBeInstanceOf(ServiceB)
@@ -65,8 +65,6 @@ describe('Circular Dependency Resolution', () => {
 	})
 
 	it('should resolve circular module dependencies using forwardRef', async () => {
-		expect(ModuleA).toBeDefined()
-		expect(ModuleB).toBeDefined()
 		const { app } = await Application.create(ModuleA)
 		const routes = app.getRoutes()
 

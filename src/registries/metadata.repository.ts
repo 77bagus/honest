@@ -30,7 +30,8 @@ export class MetadataRepository implements IMetadataRepository {
 		['middleware', new Map<Constructor, unknown[]>()],
 		['guard', new Map<Constructor, unknown[]>()],
 		['pipe', new Map<Constructor, unknown[]>()],
-		['filter', new Map<Constructor, unknown[]>()]
+		['filter', new Map<Constructor, unknown[]>()],
+		['interceptor', new Map<Constructor, unknown[]>()]
 	])
 	private readonly handlerComponents = new Map<
 		MetadataComponentType,
@@ -39,7 +40,8 @@ export class MetadataRepository implements IMetadataRepository {
 		['middleware', new Map()],
 		['guard', new Map()],
 		['pipe', new Map()],
-		['filter', new Map()]
+		['filter', new Map()],
+		['interceptor', new Map()]
 	])
 
 	static fromRootModule(rootModule: Constructor): MetadataRepository {
@@ -268,13 +270,13 @@ export class MetadataRepository implements IMetadataRepository {
 
 		this.contextIndices.set(controller, new Map(MetadataRegistry.getContextIndices(controller) || new Map()))
 
-		for (const type of ['middleware', 'guard', 'pipe', 'filter'] as const) {
+		for (const type of ['middleware', 'guard', 'pipe', 'filter', 'interceptor'] as const) {
 			const controllerMap = this.controllerComponents.get(type)!
 			controllerMap.set(controller, [...(MetadataRegistry.getController(type, controller) || [])])
 		}
 
 		for (const route of routes) {
-			for (const type of ['middleware', 'guard', 'pipe', 'filter'] as const) {
+			for (const type of ['middleware', 'guard', 'pipe', 'filter', 'interceptor'] as const) {
 				const typeMap = this.handlerComponents.get(type)!
 				if (!typeMap.has(controller)) {
 					typeMap.set(controller, new Map())
