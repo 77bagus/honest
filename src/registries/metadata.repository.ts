@@ -11,6 +11,8 @@ import type {
 import { MetadataRegistry } from './metadata.registry'
 import { resolveForwardRef } from '../utils/forward-ref.util'
 import type { Constructor } from '../types'
+import { Logger } from '../loggers/logger.service'
+import { ConfigService } from '../config/config.service'
 
 /**
  * Immutable metadata repository for a single Application instance.
@@ -27,6 +29,7 @@ export class MetadataRepository implements IMetadataRepository {
 	private readonly providerToModule = new Map<Constructor, Constructor>()
 	private readonly moduleVisibleProviders = new Map<Constructor, Set<Constructor>>()
 	private readonly globalModules = new Set<Constructor>()
+	private readonly universalProviders = new Set<Constructor>([Logger, ConfigService])
 
 	private readonly controllerComponents = new Map<MetadataComponentType, Map<Constructor, unknown[]>>([
 		['middleware', new Map<Constructor, unknown[]>()],
@@ -128,6 +131,10 @@ export class MetadataRepository implements IMetadataRepository {
 	}
 
 	isProviderVisible(provider: Constructor, consumer: Constructor): boolean {
+		if (this.universalProviders.has(provider)) {
+			return true
+		}
+
 		const moduleClass = this.providerToModule.get(consumer)
 		if (!moduleClass) {
 			// If consumer is not associated with a module, we allow it (e.g. global components or manual instantiation)

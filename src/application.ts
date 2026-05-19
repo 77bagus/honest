@@ -6,6 +6,7 @@ import { ConsoleLogger } from './loggers'
 import { RouteRegistry, MetadataRepository } from './registries'
 import { RouteManager, PipelineExecutor, ComponentManager, ParameterResolver, HandlerInvoker } from './managers'
 import { Container } from './di'
+import { Logger } from './loggers'
 import type {
 	HonestOptions,
 	IApplicationContext,
@@ -50,6 +51,7 @@ export class Application {
 		this.logger = this.options.logger || new ConsoleLogger()
 
 		this.container = this.options.container || new Container(undefined, this.logger, debugDi)
+		this.container.register(Logger, new Logger('App', this.logger))
 		this.container.setVisibilityChecker((provider, consumer) =>
 			this.metadataRepository.isProviderVisible(provider, consumer)
 		)
