@@ -7,6 +7,7 @@ import { RouteRegistry, MetadataRepository } from './registries'
 import { RouteManager, PipelineExecutor, ComponentManager, ParameterResolver, HandlerInvoker } from './managers'
 import { Container } from './di'
 import { Logger } from './loggers'
+import { WsManager, type WsAdapter } from './websockets'
 import type {
 	HonestOptions,
 	IApplicationContext,
@@ -32,6 +33,7 @@ export class Application {
 	private readonly metadataRepository: IMetadataRepository
 	private readonly componentManager: ComponentManager
 	private readonly routeManager: RouteManager
+	private readonly wsManager: WsManager
 
 	constructor(
 		private readonly options: HonestOptions = {},
@@ -87,7 +89,14 @@ export class Application {
 			debugRoutes
 		)
 
+		this.wsManager = new WsManager(this.container, this.metadataRepository, parameterResolver, this.logger)
+
 		this.setupErrorHandlers()
+	}
+
+	async useWebSocketAdapter(adapter: WsAdapter): Promise<this> {
+		await this.wsManager.useAdapter(adapter)
+		return this
 	}
 
 	private setupErrorHandlers(): void {
@@ -100,12 +109,14 @@ export class Application {
 	}
 
 	async register(moduleItem: Constructor | DynamicModule): Promise<Application> {
-		const controllers = await this.componentManager.registerModule(moduleItem)
+		const discovered = new Set<Constructor>()
+		const controllers = await this.componentManager.registerModule(moduleItem, new Set(), discovered)
 		const debugStartup =
 			this.options.debug === true ||
 			(typeof this.options.debug === 'object' && Boolean(this.options.debug.startup))
 
 		await this.routeManager.register(controllers, this.options.routing?.prefix)
+		await this.wsManager.registerGateways(Array.from(discovered))
 
 		if (debugStartup) {
 			const moduleName = typeof moduleItem === 'function' ? moduleItem.name : moduleItem.module.name
@@ -171,7 +182,7 @@ export class Application {
 					category: 'startup',
 					message: 'Application startup completed',
 					details: {
-						rootModule: rootModule.name,
+						rootModule: typeof rootModule === 'function' ? rootModule.name : rootModule.module.name,
 						routeCount: routes.length,
 						startupDurationMs: Date.now() - startedAt
 					}
@@ -187,13 +198,13 @@ export class Application {
 					category: 'startup',
 					message: 'Strict mode failed: no routes were registered',
 					details: {
-						rootModule: rootModule.name,
+						rootModule: typeof rootModule === 'function' ? rootModule.name : rootModule.module.name,
 						requireRoutes,
 						startupDurationMs: Date.now() - startedAt
 					}
 				})
 
-				app.emitStartupGuide(error, rootModule)
+				app.emitStartupGuide(error, typeof rootModule === 'function' ? rootModule : rootModule.module)
 				throw error
 			}
 
@@ -215,14 +226,14 @@ export class Application {
 					category: 'startup',
 					message: 'Application startup failed',
 					details: {
-						rootModule: rootModule.name,
+						rootModule: typeof rootModule === 'function' ? rootModule.name : rootModule.module.name,
 						errorMessage: error instanceof Error ? error.message : String(error),
 						error: error instanceof Error ? error.message : String(error),
 						stack: error instanceof Error ? error.stack : undefined
 					}
 				})
 			}
-			app.emitStartupGuide(error, rootModule)
+			app.emitStartupGuide(error, typeof rootModule === 'function' ? rootModule : rootModule.module)
 			throw error
 		}
 	}

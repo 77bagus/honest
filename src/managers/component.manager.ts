@@ -283,7 +283,8 @@ export class ComponentManager {
 
 	async registerModule(
 		moduleItem: Constructor | DynamicModule,
-		registered = new Set<Constructor>()
+		registered = new Set<Constructor>(),
+		discovered: Set<Constructor> = new Set()
 	): Promise<Constructor[]> {
 		const isDynamic = typeof moduleItem === 'object' && 'module' in moduleItem
 		const moduleClass = isDynamic ? (moduleItem as DynamicModule).module : (moduleItem as Constructor)
@@ -292,6 +293,7 @@ export class ComponentManager {
 			return []
 		}
 		registered.add(moduleClass)
+		discovered.add(moduleClass)
 
 		const moduleOptions = this.metadataRepository.getModuleOptions(moduleClass)
 
@@ -310,17 +312,20 @@ export class ComponentManager {
 		if (moduleOptions.imports && moduleOptions.imports.length > 0) {
 			for (const importedModule of moduleOptions.imports) {
 				const resolvedModule = resolveForwardRef(importedModule)
-				const importedControllers = await this.registerModule(resolvedModule, registered)
+				const importedControllers = await this.registerModule(resolvedModule, registered, discovered)
 				controllers.push(...importedControllers)
 			}
 		}
 
 		if (moduleOptions.services && moduleOptions.services.length > 0) {
 			for (const serviceClass of moduleOptions.services) {
+				const token = typeof serviceClass === 'function' ? serviceClass : serviceClass.provide
+				if (typeof token === 'function') {
+					discovered.add(token as Constructor)
+				}
 				this.container.addProvider(serviceClass)
 
 				// Resolve only if it's singleton scope during module registration
-				const token = typeof serviceClass === 'function' ? serviceClass : serviceClass.provide
 				const scope =
 					typeof token === 'function'
 						? MetadataRegistry.getMetadata(token, Symbol.for('HONEST_SCOPE'))
@@ -335,6 +340,7 @@ export class ComponentManager {
 
 		if (moduleOptions.controllers && moduleOptions.controllers.length > 0) {
 			for (const controllerClass of moduleOptions.controllers) {
+				discovered.add(controllerClass)
 				this.container.addProvider(controllerClass)
 
 				const scope = MetadataRegistry.getMetadata(controllerClass, Symbol.for('HONEST_SCOPE'))

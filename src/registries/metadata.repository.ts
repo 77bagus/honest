@@ -153,6 +153,7 @@ export class MetadataRepository implements IMetadataRepository {
 	private captureModuleGraph(input: Constructor | DynamicModule): void {
 		const visitedModules = new Set<Constructor>()
 		const controllers = new Set<Constructor>()
+		const services = new Set<Constructor>()
 
 		const visitModule = (moduleItem: Constructor | DynamicModule): void => {
 			const isDynamic = typeof moduleItem === 'object' && 'module' in moduleItem
@@ -194,6 +195,7 @@ export class MetadataRepository implements IMetadataRepository {
 			for (const service of moduleSnapshot.services || []) {
 				const token = typeof service === 'function' ? service : service.provide
 				if (typeof token === 'function') {
+					services.add(token as Constructor)
 					this.providerToModule.set(token as Constructor, moduleClass)
 				}
 			}
@@ -208,6 +210,10 @@ export class MetadataRepository implements IMetadataRepository {
 
 		for (const controller of controllers) {
 			this.captureController(controller)
+		}
+
+		for (const service of services) {
+			this.captureCustomMetadata(service)
 		}
 
 		// Calculate visible providers for each module
