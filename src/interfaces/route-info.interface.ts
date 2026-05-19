@@ -1,3 +1,4 @@
+import type { Constructor } from '../types'
 import type { ParameterMetadata } from './parameter-metadata.interface'
 
 /**
@@ -8,6 +9,10 @@ export interface RouteInfo {
 	 * Controller name
 	 */
 	controller: string | symbol
+	/**
+	 * Controller class
+	 */
+	controllerClass: Constructor
 	/**
 	 * Handler method name
 	 */

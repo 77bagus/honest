@@ -44,4 +44,9 @@ export interface IMetadataRepository {
 	 * @param consumer - The consumer class that wants to inject the provider
 	 */
 	isProviderVisible(provider: Constructor, consumer: Constructor): boolean
+
+	/**
+	 * Gets custom metadata for a target and key.
+	 */
+	getMetadata<T = any>(target: any, key: string | symbol): T | undefined
 }

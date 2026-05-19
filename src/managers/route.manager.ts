@@ -160,6 +160,7 @@ export class RouteManager {
 
 		this.routeRegistry.registerRoute({
 			controller: controllerClass.name,
+			controllerClass,
 			handler: handlerName,
 			method,
 			prefix: prefixSegment,

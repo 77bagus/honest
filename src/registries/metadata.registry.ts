@@ -81,6 +81,12 @@ export class MetadataRegistry {
 	private static readonly contextIndices = new Map<Constructor, Map<string | symbol, number>>()
 
 	/**
+	 * Stores custom metadata for controllers and handlers.
+	 * Keyed by target then key (string/symbol).
+	 */
+	private static readonly customMetadata = new Map<any, Map<string | symbol, any>>()
+
+	/**
 	 * Registry for controller-level components
 	 * Components registered here apply to all routes in a specific controller
 	 */
@@ -250,6 +256,30 @@ export class MetadataRegistry {
 	}
 
 	/**
+	 * Set custom metadata
+	 */
+	static setMetadata(target: any, key: string | symbol, value: any): void {
+		if (!this.customMetadata.has(target)) {
+			this.customMetadata.set(target, new Map())
+		}
+		this.customMetadata.get(target)!.set(key, value)
+	}
+
+	/**
+	 * Get custom metadata
+	 */
+	static getMetadata<T = any>(target: any, key: string | symbol): T | undefined {
+		return this.customMetadata.get(target)?.get(key)
+	}
+
+	/**
+	 * Get all custom metadata for a target
+	 */
+	static getAllMetadata(target: any): Map<string | symbol, any> {
+		return new Map(this.customMetadata.get(target) || new Map())
+	}
+
+	/**
 	 * Register a component at the controller level
 	 */
 	static registerController<T extends ComponentType>(
@@ -335,6 +365,7 @@ export class MetadataRegistry {
 		this.parameters.clear()
 		this.contextIndices.clear()
 		this.injectTokens.clear()
+		this.customMetadata.clear()
 
 		for (const map of this.controller.values()) {
 			map.clear()

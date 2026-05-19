@@ -30,6 +30,7 @@ export class MetadataRepository implements IMetadataRepository {
 	private readonly moduleVisibleProviders = new Map<Constructor, Set<Constructor>>()
 	private readonly globalModules = new Set<Constructor>()
 	private readonly universalProviders = new Set<Constructor>([Logger, ConfigService])
+	private readonly customMetadata = new Map<any, Map<string | symbol, any>>()
 
 	private readonly controllerComponents = new Map<MetadataComponentType, Map<Constructor, unknown[]>>([
 		['middleware', new Map<Constructor, unknown[]>()],
@@ -143,6 +144,10 @@ export class MetadataRepository implements IMetadataRepository {
 
 		const visible = this.moduleVisibleProviders.get(moduleClass)
 		return visible ? visible.has(provider) : true
+	}
+
+	getMetadata<T = any>(target: any, key: string | symbol): T | undefined {
+		return this.customMetadata.get(target)?.get(key)
 	}
 
 	private captureModuleGraph(input: Constructor | DynamicModule): void {
@@ -327,6 +332,19 @@ export class MetadataRepository implements IMetadataRepository {
 					...MetadataRegistry.getHandler(type, controller, route.handlerName)
 				])
 			}
+
+			// Capture custom metadata for this handler
+			this.captureCustomMetadata(controller, route.handlerName)
+		}
+
+		// Capture custom metadata for the controller class itself
+		this.captureCustomMetadata(controller)
+	}
+
+	private captureCustomMetadata(target: any, _propertyKey?: string | symbol): void {
+		const metadata = MetadataRegistry.getAllMetadata(target)
+		if (metadata.size > 0) {
+			this.customMetadata.set(target, metadata)
 		}
 	}
 
