@@ -50,6 +50,9 @@ export class Application {
 		this.logger = this.options.logger || new ConsoleLogger()
 
 		this.container = this.options.container || new Container(undefined, this.logger, debugDi)
+		this.container.setVisibilityChecker((provider, consumer) =>
+			this.metadataRepository.isProviderVisible(provider, consumer)
+		)
 
 		this.context = new ApplicationContext()
 
@@ -174,6 +177,14 @@ export class Application {
 			}
 
 			await app.register(rootModule)
+
+			// Trigger onApplicationBootstrap for all instances
+			const instances = app.getContainer().getInstances()
+			for (const instance of instances) {
+				if (typeof instance.onApplicationBootstrap === 'function') {
+					await instance.onApplicationBootstrap()
+				}
+			}
 
 			const routes = app.getRoutes()
 			if (debugStartup) {

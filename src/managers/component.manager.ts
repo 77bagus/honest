@@ -1,6 +1,7 @@
 import type { Context, Next } from 'hono'
 import { HONEST_PIPELINE_CONTROLLER_KEY, HONEST_PIPELINE_HANDLER_KEY } from '../constants'
 import { createErrorResponse } from '../helpers'
+import { resolveForwardRef } from '../utils/forward-ref.util'
 import type {
 	ArgumentMetadata,
 	DiContainer,
@@ -248,7 +249,7 @@ export class ComponentManager {
 	// -- Module registration --
 
 	async registerModule(moduleClass: Constructor, registered = new Set<Constructor>()): Promise<Constructor[]> {
-		if (registered.has(moduleClass)) {
+		if (!moduleClass || registered.has(moduleClass)) {
 			return []
 		}
 		registered.add(moduleClass)
@@ -265,22 +266,39 @@ export class ComponentManager {
 		}
 
 		const controllers: Constructor[] = []
+		const instantiatedInThisModule: any[] = []
 
 		if (moduleOptions.imports && moduleOptions.imports.length > 0) {
 			for (const importedModule of moduleOptions.imports) {
-				const importedControllers = await this.registerModule(importedModule, registered)
+				const resolvedModule = resolveForwardRef(importedModule)
+				const importedControllers = await this.registerModule(resolvedModule, registered)
 				controllers.push(...importedControllers)
 			}
 		}
 
 		if (moduleOptions.services && moduleOptions.services.length > 0) {
 			for (const serviceClass of moduleOptions.services) {
-				this.container.resolve(serviceClass)
+				this.container.addProvider(serviceClass)
+				const token = typeof serviceClass === 'function' ? serviceClass : serviceClass.provide
+				const instance = this.container.resolve(token as Constructor)
+				instantiatedInThisModule.push(instance)
 			}
 		}
 
 		if (moduleOptions.controllers && moduleOptions.controllers.length > 0) {
-			controllers.push(...moduleOptions.controllers)
+			for (const controllerClass of moduleOptions.controllers) {
+				this.container.addProvider(controllerClass)
+				const instance = this.container.resolve(controllerClass)
+				instantiatedInThisModule.push(instance)
+				controllers.push(controllerClass)
+			}
+		}
+
+		// Trigger onModuleInit for all instances created/resolved in this module
+		for (const instance of instantiatedInThisModule) {
+			if (typeof instance.onModuleInit === 'function') {
+				await instance.onModuleInit()
+			}
 		}
 
 		return controllers

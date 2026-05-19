@@ -37,4 +37,11 @@ export interface IMetadataRepository {
 		controller: Constructor,
 		handlerName: string | symbol
 	): MetadataComponentTypeMap[T][]
+
+	/**
+	 * Checks if a provider is visible to a consumer based on module encapsulation.
+	 * @param provider - The provider class to check visibility for
+	 * @param consumer - The consumer class that wants to inject the provider
+	 */
+	isProviderVisible(provider: Constructor, consumer: Constructor): boolean
 }

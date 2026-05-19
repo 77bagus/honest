@@ -67,6 +67,12 @@ export class MetadataRegistry {
 	private static readonly parameters = new Map<Constructor, Map<string | symbol, ParameterMetadata[]>>()
 
 	/**
+	 * Stores constructor injection tokens for dependency resolution
+	 * Keyed by target class then parameter index
+	 */
+	private static readonly injectTokens = new Map<Constructor, Map<number, any>>()
+
+	/**
 	 * Stores indices of context parameters in controller methods
 	 * Used for optimizing context injection
 	 */
@@ -223,6 +229,23 @@ export class MetadataRegistry {
 	}
 
 	/**
+	 * Set an injection token for a constructor parameter
+	 */
+	static setInjectToken(target: Constructor, index: number, token: any): void {
+		if (!this.injectTokens.has(target)) {
+			this.injectTokens.set(target, new Map())
+		}
+		this.injectTokens.get(target)!.set(index, token)
+	}
+
+	/**
+	 * Get injection tokens for a class constructor
+	 */
+	static getInjectTokens(target: Constructor): Map<number, any> {
+		return this.injectTokens.get(target) || new Map()
+	}
+
+	/**
 	 * Register a component at the controller level
 	 */
 	static registerController<T extends ComponentType>(
@@ -307,6 +330,7 @@ export class MetadataRegistry {
 		this.modules.clear()
 		this.parameters.clear()
 		this.contextIndices.clear()
+		this.injectTokens.clear()
 
 		for (const map of this.controller.values()) {
 			map.clear()
