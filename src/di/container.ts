@@ -12,11 +12,13 @@ import type {
 	ClassProvider,
 	FactoryProvider
 } from '../interfaces'
+import { Scope } from '../interfaces'
 import { StaticServiceRegistry } from '../registries'
 import type { Constructor } from '../types'
 
 /**
- * Dependency Injection container that manages class instances and their dependencies
+ * Dependency Injection container that manages class instances and their dependencies.
+ * Supports Singleton (default), Request, and Transient scopes.
  */
 export class Container implements DiContainer {
 	constructor(
@@ -26,17 +28,22 @@ export class Container implements DiContainer {
 	) {}
 
 	/**
-	 * Map of tokens to their instances
+	 * Map of singleton tokens to their instances.
 	 */
-	private instances = new Map<ProviderToken, any>()
+	private readonly singletonInstances = new Map<ProviderToken, any>()
 
 	/**
-	 * Map of tokens to their provider definitions
+	 * Map of context IDs to their request-scoped instances.
 	 */
-	private providers = new Map<ProviderToken, Provider>()
+	private readonly requestInstances = new Map<string, Map<ProviderToken, any>>()
 
 	/**
-	 * Optional visibility checker
+	 * Map of tokens to their provider definitions.
+	 */
+	private readonly providers = new Map<ProviderToken, Provider>()
+
+	/**
+	 * Optional visibility checker.
 	 */
 	private visibilityChecker?: (provider: Constructor, consumer: Constructor) => boolean
 
@@ -48,7 +55,7 @@ export class Container implements DiContainer {
 	}
 
 	/**
-	 * Registers a provider definition
+	 * Registers a provider definition.
 	 * @param provider - The provider definition
 	 */
 	addProvider(provider: Provider): void {
@@ -60,26 +67,29 @@ export class Container implements DiContainer {
 	}
 
 	/**
-	 * Resolves a dependency from the container
+	 * Resolves a dependency from the container.
 	 * @param token - The token or class constructor to resolve
+	 * @param contextId - Optional context ID for request-scoped resolution
 	 * @returns An instance of the requested dependency
 	 */
-	async resolve<T>(token: ProviderToken): Promise<T> {
-		return this.resolveWithTracking(token, new Set<ProviderToken>())
+	async resolve<T>(token: ProviderToken, contextId?: string): Promise<T> {
+		return this.resolveWithTracking(token, new Set<ProviderToken>(), false, undefined, contextId)
 	}
 
 	/**
-	 * Internal recursive resolver with circular dependency tracking
+	 * Internal recursive resolver with circular dependency tracking.
 	 */
 	private async resolveWithTracking<T>(
 		token: ProviderToken,
 		resolving: Set<ProviderToken>,
 		isForwardRef = false,
-		consumer?: Constructor
+		consumer?: Constructor,
+		contextId?: string
 	): Promise<T> {
 		const tokenName = typeof token === 'function' ? token.name : String(token)
+		const scope = this.getScope(token)
 
-		// Visibility check only applies to class-based providers/consumers
+		// Visibility check
 		if (
 			this.visibilityChecker &&
 			consumer &&
@@ -89,22 +99,37 @@ export class Container implements DiContainer {
 			this.emitLog({
 				level: 'error',
 				category: 'di',
-				message: `Encapsulation violation: ${tokenName} is not visible to ${consumer.name}. Did you forget to export it from its module?`
+				message: `Encapsulation violation: ${tokenName} is not visible to ${consumer.name}.`
 			})
 			throw new Error(
 				`Encapsulation violation: ${tokenName} is not visible to ${consumer.name}. Check your @Module() exports.`
 			)
 		}
 
-		if (this.instances.has(token)) {
+		// Singleton check
+		if (scope === Scope.DEFAULT && this.singletonInstances.has(token)) {
 			this.emitLog({
 				level: 'debug',
 				category: 'di',
 				message: `Resolved ${tokenName} from DI cache`
 			})
-			return this.instances.get(token)
+			return this.singletonInstances.get(token)
 		}
 
+		// Request scope check
+		if (scope === Scope.REQUEST && contextId) {
+			const contextMap = this.requestInstances.get(contextId)
+			if (contextMap?.has(token)) {
+				this.emitLog({
+					level: 'debug',
+					category: 'di',
+					message: `Resolved ${tokenName} from DI cache`
+				})
+				return contextMap.get(token)
+			}
+		}
+
+		// Circular dependency detection
 		if (resolving.has(token)) {
 			const cycle = [...resolving.keys(), token]
 				.map((t) => (typeof t === 'function' ? t.name : String(t)))
@@ -127,10 +152,9 @@ export class Container implements DiContainer {
 				details: { cycle }
 			})
 
-			// Basic proxy to resolve circular dependency
+			// Circular Proxy
 			return new Proxy({} as any, {
 				get: (t, prop) => {
-					// Don't trigger resolution error for internal JS symbols or common properties
 					if (
 						prop === 'toString' ||
 						prop === Symbol.toStringTag ||
@@ -141,24 +165,21 @@ export class Container implements DiContainer {
 					) {
 						return () => `[HonestProxy:${tokenName}]`
 					}
-					// Important: prevent Proxy from being treated as a Thenable (Promise)
-					if (prop === 'then') {
-						return undefined
-					}
-					const instance = this.instances.get(token)
+					if (prop === 'then') return undefined
+
+					const instance = this.getInstance(token, contextId)
 					if (!instance) {
-						// Fallback for some library inspection tools (like node's util.inspect or bun's internal checks)
-						if (typeof prop === 'string' && (prop.startsWith('__') || prop === 'as-instance')) {
+						if (typeof prop === 'string' && (prop.startsWith('__') || prop === 'as-instance'))
 							return undefined
-						}
 						throw new Error(
-							`Circular dependency detected: proxy accessed before ${tokenName} was instantiated. Cycle: ${cycle}`
+							`Circular dependency detected: proxy accessed before ${tokenName} was instantiated.`
 						)
 					}
 					return instance[prop]
 				}
 			})
 		}
+
 		resolving.add(token)
 
 		this.emitLog({
@@ -169,7 +190,6 @@ export class Container implements DiContainer {
 		})
 
 		const provider = this.providers.get(token) || (typeof token === 'function' ? token : undefined)
-
 		if (!provider) {
 			throw new Error(
 				`Cannot resolve ${tokenName}: it is not decorated with @Service(). Did you forget to add @Service() to the class?`
@@ -179,28 +199,24 @@ export class Container implements DiContainer {
 		let instance: T
 
 		if (typeof provider === 'function') {
-			// Class Provider (direct constructor)
-			instance = await this.instantiateClass(provider as Constructor<T>, resolving)
+			instance = await this.instantiateClass(provider as Constructor<T>, resolving, contextId)
 		} else if ('useValue' in provider) {
-			// Value Provider
 			instance = (provider as ValueProvider).useValue
 		} else if ('useClass' in provider) {
-			// Class Provider (via useClass)
-			instance = await this.instantiateClass((provider as ClassProvider).useClass, resolving)
+			instance = await this.instantiateClass((provider as ClassProvider).useClass, resolving, contextId)
 		} else if ('useFactory' in provider) {
-			// Factory Provider
 			const factoryProvider = provider as FactoryProvider
 			const inject = factoryProvider.inject || []
 			const args = []
 			for (const argToken of inject) {
-				args.push(await this.resolveWithTracking(argToken, new Set(resolving)))
+				args.push(await this.resolveWithTracking(argToken, new Set(resolving), false, undefined, contextId))
 			}
 			instance = await factoryProvider.useFactory(...args)
 		} else {
 			throw new Error(`Invalid provider definition for token: ${tokenName}`)
 		}
 
-		this.instances.set(token, instance)
+		this.instancesSet(token, instance, contextId)
 
 		this.emitLog({
 			level: 'debug',
@@ -211,7 +227,11 @@ export class Container implements DiContainer {
 		return instance
 	}
 
-	private async instantiateClass<T>(target: Constructor<T>, resolving: Set<ProviderToken>): Promise<T> {
+	private async instantiateClass<T>(
+		target: Constructor<T>,
+		resolving: Set<ProviderToken>,
+		contextId?: string
+	): Promise<T> {
 		const paramTypes = Reflect.getMetadata('design:paramtypes', target) || []
 		const injectTokens = MetadataRegistry.getInjectTokens(target)
 
@@ -224,6 +244,19 @@ export class Container implements DiContainer {
 			throw new Error(
 				`Cannot resolve dependencies for ${target.name}: constructor metadata is missing. Ensure 'reflect-metadata' is imported and 'emitDecoratorMetadata' is enabled.`
 			)
+		}
+
+		// Check if any dependency is request-scoped but we are resolving as singleton
+		const targetScope = this.getScope(target)
+		if (targetScope === Scope.DEFAULT && !contextId) {
+			for (let i = 0; i < paramTypes.length; i++) {
+				const depToken = injectTokens.get(i) || paramTypes[i]
+				if (this.getScope(depToken) === Scope.REQUEST) {
+					throw new Error(
+						`Encapsulation violation: Singleton ${target.name} cannot depend on request-scoped ${typeof depToken === 'function' ? depToken.name : String(depToken)}.`
+					)
+				}
+			}
 		}
 
 		const dependencies: any[] = []
@@ -247,9 +280,14 @@ export class Container implements DiContainer {
 
 			let dependency: any
 			try {
-				dependency = await this.resolveWithTracking(effectiveToken, new Set(resolving), hasForwardRef, target)
+				dependency = await this.resolveWithTracking(
+					effectiveToken,
+					new Set(resolving),
+					hasForwardRef,
+					target,
+					contextId
+				)
 			} catch (error: any) {
-				// Re-throw if it's already an Honest error message we expect in tests
 				if (error.message.includes('Cannot resolve dependency at index')) {
 					throw error
 				}
@@ -266,26 +304,56 @@ export class Container implements DiContainer {
 		return new target(...dependencies)
 	}
 
-	/**
-	 * Registers a pre-created instance for a token
-	 * @param token - The token or class constructor to register
-	 * @param instance - The instance to register
-	 */
+	private getScope(token: ProviderToken): Scope {
+		if (typeof token !== 'function') return Scope.DEFAULT
+		return MetadataRegistry.getMetadata(token, Symbol.for('HONEST_SCOPE')) ?? Scope.DEFAULT
+	}
+
+	private getInstance(token: ProviderToken, contextId?: string): any {
+		if (this.singletonInstances.has(token)) return this.singletonInstances.get(token)
+		if (contextId) return this.requestInstances.get(contextId)?.get(token)
+		return undefined
+	}
+
+	private instancesSet(token: ProviderToken, instance: any, contextId?: string): void {
+		const scope = this.getScope(token)
+		if (scope === Scope.DEFAULT) {
+			this.singletonInstances.set(token, instance)
+		} else if (scope === Scope.REQUEST && contextId) {
+			if (!this.requestInstances.has(contextId)) {
+				this.requestInstances.set(contextId, new Map())
+			}
+			this.requestInstances.get(contextId)!.set(token, instance)
+		}
+	}
+
 	register<T>(token: ProviderToken, instance: T): void {
-		this.instances.set(token, instance)
+		this.singletonInstances.set(token, instance)
 	}
 
 	has(token: ProviderToken): boolean {
-		return this.instances.has(token)
+		return this.singletonInstances.has(token)
 	}
 
 	clear(): void {
-		this.instances.clear()
+		this.singletonInstances.clear()
+		this.requestInstances.clear()
 		this.providers.clear()
 	}
 
+	/**
+	 * Clears request-scoped instances for a given context ID.
+	 */
+	clearContext(contextId: string): void {
+		this.requestInstances.delete(contextId)
+	}
+
 	getInstances(): any[] {
-		return Array.from(this.instances.values())
+		const all = Array.from(this.singletonInstances.values())
+		for (const map of this.requestInstances.values()) {
+			all.push(...map.values())
+		}
+		return all
 	}
 
 	setVisibilityChecker(checker: (provider: Constructor, consumer: Constructor) => boolean): void {

@@ -80,7 +80,6 @@ export class RouteManager {
 			throw new Error(`Class ${controllerClass.name} is not decorated with @Controller()`)
 		}
 
-		const controllerInstance = await this.container.resolve(controllerClass)
 		const controllerPath = this.metadataRepository.getControllerPath(controllerClass)
 		const controllerOptions = this.metadataRepository.getControllerOptions(controllerClass)
 		const routes = this.metadataRepository.getRoutes(controllerClass)
@@ -102,7 +101,6 @@ export class RouteManager {
 
 			if (effectivePrefix === false) {
 				await this.registerRoute(
-					controllerInstance,
 					route,
 					parameterMetadata,
 					contextIndices,
@@ -118,7 +116,6 @@ export class RouteManager {
 
 			const versionSegment = this.formatVersionSegment(effectiveVersion)
 			await this.registerRoute(
-				controllerInstance,
 				route,
 				parameterMetadata,
 				contextIndices,
@@ -133,7 +130,6 @@ export class RouteManager {
 	}
 
 	private async registerRoute(
-		controllerInstance: any,
 		route: RouteDefinition,
 		parameterMetadata: Map<string | symbol, ParameterMetadata[]>,
 		contextIndices: Map<string | symbol, number>,
@@ -147,8 +143,6 @@ export class RouteManager {
 		const { handlerName } = route
 
 		const fullPath = this.buildRoutePath(prefixSegment, versionSegment, controllerSegment, methodSegment)
-
-		const handler = controllerInstance[handlerName].bind(controllerInstance)
 
 		const handlerParams = parameterMetadata.get(handlerName) || []
 		const contextIndex = contextIndices.get(handlerName)
@@ -176,7 +170,6 @@ export class RouteManager {
 				return await this.pipelineExecutor.execute({
 					controllerClass,
 					handlerName,
-					handler,
 					handlerParams,
 					handlerPipes,
 					contextIndex,

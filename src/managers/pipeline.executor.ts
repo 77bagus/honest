@@ -2,7 +2,14 @@ import type { Context } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { HONEST_PIPELINE_CONTROLLER_KEY, HONEST_PIPELINE_HANDLER_KEY } from '../constants'
 import { NoopLogger } from '../loggers'
-import type { ILogger, ParameterMetadata, HonestInterceptor, CallHandler, ExecutionContext } from '../interfaces'
+import type {
+	ILogger,
+	ParameterMetadata,
+	HonestInterceptor,
+	CallHandler,
+	ExecutionContext,
+	DiContainer
+} from '../interfaces'
 import type { IPipe } from '../interfaces'
 import { ComponentManager } from './component.manager'
 import { HandlerInvoker } from './handler.invoker'
@@ -13,7 +20,6 @@ import type { Constructor } from '../types'
 export interface PipelineExecutionInput {
 	controllerClass: Constructor
 	handlerName: string | symbol
-	handler: (...args: unknown[]) => Promise<unknown> | unknown
 	handlerParams: ReadonlyArray<ParameterMetadata>
 	handlerPipes: ReadonlyArray<IPipe>
 	contextIndex?: number
@@ -25,6 +31,7 @@ export interface PipelineExecutionInput {
  */
 export class PipelineExecutor {
 	constructor(
+		private readonly container: DiContainer,
 		private readonly componentManager: ComponentManager,
 		private readonly parameterResolver: ParameterResolver,
 		private readonly handlerInvoker: HandlerInvoker,
@@ -33,63 +40,75 @@ export class PipelineExecutor {
 	) {}
 
 	async execute(input: PipelineExecutionInput): Promise<unknown> {
-		const { controllerClass, handlerName, handler, handlerParams, handlerPipes, contextIndex, context } = input
+		const { controllerClass, handlerName, handlerParams, handlerPipes, contextIndex, context } = input
+
+		// Use Hono's requestId if available, or generate one
+		const contextId = (context.get('requestId') as string) || Math.random().toString(36).substring(7)
 
 		context.set(HONEST_PIPELINE_CONTROLLER_KEY, controllerClass)
 		context.set(HONEST_PIPELINE_HANDLER_KEY, String(handlerName))
 
-		const guards = await this.componentManager.getHandlerGuards(controllerClass, handlerName)
+		try {
+			// Resolve controller instance per request (Container handles singleton caching)
+			const controllerInstance = await this.container.resolve(controllerClass, contextId)
+			const handler = controllerInstance[handlerName].bind(controllerInstance)
 
-		for (const guard of guards) {
-			const canActivate = await guard.canActivate(context)
-			if (!canActivate) {
-				if (this.debugPipeline) {
-					this.logger.emit({
-						level: 'warn',
-						category: 'pipeline',
-						message: `Guard rejected request at ${controllerClass.name}.${String(handlerName)}`,
-						details: { guard: guard.constructor?.name || 'UnknownGuard' }
+			const guards = await this.componentManager.getHandlerGuards(controllerClass, handlerName)
+
+			for (const guard of guards) {
+				const canActivate = await guard.canActivate(context)
+				if (!canActivate) {
+					if (this.debugPipeline) {
+						this.logger.emit({
+							level: 'warn',
+							category: 'pipeline',
+							message: `Guard rejected request at ${controllerClass.name}.${String(handlerName)}`,
+							details: { guard: guard.constructor?.name || 'UnknownGuard' }
+						})
+					}
+					throw new HTTPException(403, {
+						message: `Forbidden by ${guard.constructor?.name || 'UnknownGuard'} at ${controllerClass.name}.${String(handlerName)}`
 					})
 				}
-				throw new HTTPException(403, {
-					message: `Forbidden by ${guard.constructor?.name || 'UnknownGuard'} at ${controllerClass.name}.${String(handlerName)}`
-				})
-			}
-		}
-
-		const interceptors = await this.componentManager.getHandlerInterceptors(controllerClass, handlerName)
-		const executionContext = new ExecutionContextHost(controllerClass, handler, context, handlerName)
-
-		const handlerWrapper = async () => {
-			const args = await this.parameterResolver.resolveArguments({
-				controllerName: controllerClass.name,
-				handlerName,
-				handlerArity: handler.length,
-				handlerParams,
-				handlerPipes,
-				context
-			})
-
-			if (this.debugPipeline) {
-				this.logger.emit({
-					level: 'debug',
-					category: 'pipeline',
-					message: `Resolved handler arguments for ${controllerClass.name}.${String(handlerName)}`,
-					details: {
-						guardCount: guards.length,
-						parameterCount: handlerParams.length,
-						pipeCount: handlerPipes.length,
-						interceptorCount: interceptors.length
-					}
-				})
 			}
 
-			return handler(...args)
+			const interceptors = await this.componentManager.getHandlerInterceptors(controllerClass, handlerName)
+			const executionContext = new ExecutionContextHost(controllerClass, handler, context, handlerName)
+
+			const handlerWrapper = async () => {
+				const args = await this.parameterResolver.resolveArguments({
+					controllerName: controllerClass.name,
+					handlerName,
+					handlerArity: handler.length,
+					handlerParams,
+					handlerPipes,
+					context
+				})
+
+				if (this.debugPipeline) {
+					this.logger.emit({
+						level: 'debug',
+						category: 'pipeline',
+						message: `Resolved handler arguments for ${controllerClass.name}.${String(handlerName)}`,
+						details: {
+							guardCount: guards.length,
+							parameterCount: handlerParams.length,
+							pipeCount: handlerPipes.length,
+							interceptorCount: interceptors.length
+						}
+					})
+				}
+
+				return handler(...args)
+			}
+
+			const result = await this.chainInterceptors(interceptors, executionContext, handlerWrapper)
+
+			return this.handlerInvoker.mapResult(result, context, contextIndex)
+		} finally {
+			// Clean up request-scoped instances after request ends
+			this.container.clearContext(contextId)
 		}
-
-		const result = await this.chainInterceptors(interceptors, executionContext, handlerWrapper)
-
-		return this.handlerInvoker.mapResult(result, context, contextIndex)
 	}
 
 	private async chainInterceptors(

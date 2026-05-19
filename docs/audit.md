@@ -14,7 +14,7 @@ This document provides a comprehensive audit of the HonestJS framework, identify
 - [ ] **Dependency Graph:** No built-in way to visualize or inspect the dependency graph at startup.
 
 ### Dependency Injection (DI)
-- [ ] **Injection Scopes:** Only Singleton scope is supported. Missing `Request` and `Transient` scopes.
+- [x] **Injection Scopes:** Only Singleton scope is supported. Missing `Request` and `Transient` scopes.
 - [ ] **Property Injection:** Currently only constructor injection is supported. Missing `@Inject()` for properties.
 - [x] **String/Symbol Tokens:** DI seems limited to class constructors as tokens. No support for string or symbol-based tokens.
 - [ ] **Multi-instance Providers:** No support for `multi: true` providers (e.g., for registering multiple plugins to one token).
@@ -69,7 +69,7 @@ This document provides a comprehensive audit of the HonestJS framework, identify
 
 ### Phase 3: Ecosystem Expansion (Long Term) - 🚧 IN PROGRESS
 1. [x] **Swagger Integration:** Automate OpenAPI 3.0 spec generation.
-2. [ ] **Request Scoping:** Implement `Request` scope in the DI container.
+2. [x] **Request Scoping:** Implement `Request` scope in the DI container.
 3. [ ] **Websockets & SSE:** Add real-time communication support.
 4. [ ] **CLI Tool:** Develop `honest-cli` for rapid prototyping.
 

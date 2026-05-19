@@ -67,6 +67,7 @@ export class Application {
 		const parameterResolver = new ParameterResolver(this.componentManager, this.logger)
 		const handlerInvoker = new HandlerInvoker()
 		const pipelineExecutor = new PipelineExecutor(
+			this.container,
 			this.componentManager,
 			parameterResolver,
 			handlerInvoker,

@@ -1,4 +1,5 @@
 import type { VERSION_NEUTRAL } from '../constants'
+import type { Scope } from './scope.interface'
 
 /**
  * Interface for controller configuration options
@@ -16,4 +17,9 @@ export interface ControllerOptions {
 	 * Set to an array of numbers to make routes available at multiple versions
 	 */
 	version?: number | null | typeof VERSION_NEUTRAL | number[]
+
+	/**
+	 * Injection scope of the controller.
+	 */
+	scope?: Scope
 }

@@ -16,10 +16,12 @@ import type {
 	MiddlewareType,
 	PipeType,
 	HonestInterceptor,
-	InterceptorType
+	InterceptorType,
+	DynamicModule
 } from '../interfaces'
+import { Scope } from '../interfaces'
 import { NoopLogger } from '../loggers'
-import { type ComponentType, type ComponentTypeMap } from '../registries'
+import { type ComponentType, type ComponentTypeMap, MetadataRegistry } from '../registries'
 import type { Constructor } from '../types'
 import { isObject } from '../utils'
 
@@ -27,11 +29,6 @@ type ComponentInstance = MiddlewareType | GuardType | PipeType | FilterType | In
 
 /**
  * Manager class for handling all component types in the Honest framework.
- *
- * Each Application instance owns a ComponentManager, which holds per-app
- * global components and a reference to the DI container. Controller-level
- * and handler-level components remain in MetadataRegistry (static, set at
- * class-definition time by decorators).
  */
 export class ComponentManager {
 	private readonly globalComponents = new Map<ComponentType, Set<ComponentInstance>>([
@@ -321,17 +318,30 @@ export class ComponentManager {
 		if (moduleOptions.services && moduleOptions.services.length > 0) {
 			for (const serviceClass of moduleOptions.services) {
 				this.container.addProvider(serviceClass)
+
+				// Resolve only if it's singleton scope during module registration
 				const token = typeof serviceClass === 'function' ? serviceClass : serviceClass.provide
-				const instance = await this.container.resolve(token as Constructor)
-				instantiatedInThisModule.push(instance)
+				const scope =
+					typeof token === 'function'
+						? MetadataRegistry.getMetadata(token, Symbol.for('HONEST_SCOPE'))
+						: Scope.DEFAULT
+
+				if (scope === Scope.DEFAULT || scope === undefined) {
+					const instance = await this.container.resolve(token as Constructor)
+					instantiatedInThisModule.push(instance)
+				}
 			}
 		}
 
 		if (moduleOptions.controllers && moduleOptions.controllers.length > 0) {
 			for (const controllerClass of moduleOptions.controllers) {
 				this.container.addProvider(controllerClass)
-				const instance = await this.container.resolve(controllerClass)
-				instantiatedInThisModule.push(instance)
+
+				const scope = MetadataRegistry.getMetadata(controllerClass, Symbol.for('HONEST_SCOPE'))
+				if (scope === Scope.DEFAULT || scope === undefined) {
+					const instance = await this.container.resolve(controllerClass)
+					instantiatedInThisModule.push(instance)
+				}
 				controllers.push(controllerClass)
 			}
 		}

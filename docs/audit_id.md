@@ -14,7 +14,7 @@ Dokumen ini memberikan audit komprehensif terhadap framework HonestJS, mengident
 - [ ] **Dependency Graph:** Tidak ada cara bawaan untuk memvisualisasikan atau memeriksa graf dependensi saat startup.
 
 ### Dependency Injection (DI)
-- [ ] **Injection Scopes:** Hanya scope Singleton yang didukung. Kurang scope `Request` dan `Transient`.
+- [x] **Injection Scopes:** Hanya scope Singleton yang didukung. Kurang scope `Request` dan `Transient`.
 - [ ] **Property Injection:** Saat ini hanya mendukung constructor injection. Kurang dekorator `@Inject()` untuk properti.
 - [x] **Token String/Symbol:** DI tampaknya terbatas pada constructor kelas sebagai token. Tidak ada dukungan untuk token berbasis string atau symbol.
 - [ ] **Multi-instance Providers:** Tidak ada dukungan untuk provider `multi: true` (misalnya, untuk mendaftarkan beberapa plugin ke satu token).
@@ -69,7 +69,7 @@ Dokumen ini memberikan audit komprehensif terhadap framework HonestJS, mengident
 
 ### Fase 3: Ekspansi Ekosistem (Jangka Panjang) - 🚧 SEDANG BERJALAN
 1. [x] **Integrasi Swagger:** Otomatiskan pembuatan spesifikasi OpenAPI 3.0.
-2. [ ] **Request Scoping:** Implementasikan scope `Request` dalam kontainer DI.
+2. [x] **Request Scoping:** Implementasikan scope `Request` dalam kontainer DI.
 3. [ ] **Websockets & SSE:** Tambahkan dukungan komunikasi real-time.
 4. [ ] **Alat CLI:** Kembangkan `honest-cli` untuk prototyping cepat.
 
