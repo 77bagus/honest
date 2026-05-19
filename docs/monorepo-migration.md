@@ -1,90 +1,91 @@
-# HonestJS Monorepo Migration Plan
+# HonestJS Monorepo Migration Plan (Refined for Performance)
 
-This document outlines the strategy for refactoring HonestJS into a monorepo structure, inspired by the architecture of NestJS. This change will improve modularity, allow independent versioning of packages, and align with industry standards for framework design.
+This plan outlines the structural changes to transform HonestJS into a NestJS-like monorepo while maintaining Hono's high-performance characteristics.
 
-## 📦 Proposed Package Structure
+## 🚀 Performance Core Principles
 
-We will adopt a multi-package repository (monorepo) using **Bun Workspaces**.
+To ensure HonestJS remains as fast as raw Hono, the migration will adhere to these principles:
 
-### 1. `@honestjs/common`
-The foundation of the framework. Contains code that is independent of the execution environment or execution core.
-- **Decorators:** `@Controller()`, `@Get()`, `@Post()`, `@Inject()`, `@Module()`, `@Service()`, etc.
-- **Interfaces:** `IPlugin`, `Middleware`, `Guard`, `Pipe`, `Filter`, `Interceptor`.
-- **Built-in Components:** Standard Pipes (Validation), Guards, Interceptors.
-- **Utilities:** `Logger`, `ConfigService` (base), and common helper functions.
-- **Exceptions:** `FrameworkError` and standard HTTP exceptions.
-
-### 2. `@honestjs/core`
-The "brain" of the framework. Handles the internal mechanics.
-- **DI Container:** The `Container` class and dependency resolution logic.
-- **Application Engine:** `Application` class, bootstrap sequence, and lifecycle management.
-- **Metadata Management:** `MetadataRegistry` and `MetadataRepository`.
-- **Pipeline Executor:** The logic that chains middleware, guards, pipes, and interceptors.
-- **Discovery:** Logic to scan modules and register components.
-
-### 3. `@honestjs/platform-hono`
-The Hono-specific implementation. HonestJS is currently built on Hono, so this package will contain the adapters.
-- **Routing:** Hono-specific route registration.
-- **Context Adapter:** Mapping Hono's `Context` to framework-neutral abstractions if necessary.
-- **HTTP Server:** Hono integration logic.
-
-### 4. `@honestjs/swagger`
-The OpenAPI/Swagger integration.
-- **Logic:** OpenAPI document generator and builder.
-- **Decorators:** Swagger-specific decorators (`@ApiTags`, etc.).
-
-### 5. `@honestjs/websockets`
-Real-time communication support.
-- **Logic:** `WsManager` and adapter interfaces.
-- **Decorators:** `@WebSocketGateway`, `@SubscribeMessage`, etc.
-
-### 6. `@honestjs/testing`
-Utilities for unit and integration testing.
-- **Harness:** `createTestingModule`, `createTestApplication`.
-
-### 7. `@honestjs/cli`
-The scaffolding and generation tool.
-- **Commands:** `new`, `generate`.
+1.  **Zero-Overhead Abstractions**: Decorators in `@honestjs/common` will be pure metadata providers. No logic will execute at request-time inside decorators.
+2.  **Bootstrap Pre-computation**: All module discovery, dependency resolution, and pipeline chaining (guards, interceptors, pipes) will be performed **once** during the bootstrap phase.
+3.  **Flat Pipeline Execution**: The `PipelineExecutor` will compile component chains into a flat, optimized execution sequence. We will avoid deep recursive calls or complex observable streams (like RxJS) in the request hot-path.
+4.  **Native Hono Integration**: The framework will register "finalized" handlers directly to Hono. At request time, Hono will call a pre-compiled function that has all its dependencies already resolved.
+5.  **Dependency Isolation**: The monorepo structure will ensure that only the code you use ends up in your bundle (tree-shakability).
 
 ---
 
-## 🛠 Transition Strategy
+## 📦 Revised Package Structure
 
-### Phase 1: Infrastructure Setup
-1. **Workspace Configuration:** Create a `packages/` directory and configure `package.json` for Bun workspaces.
-2. **Global Config:** Consolidate `tsconfig.json`, `eslint.config.js`, and `prettierrc` at the root.
-3. **Internal Linking:** Use workspace protocols (e.g., `"@honestjs/common": "workspace:*"`).
+### 1. `@honestjs/common` (The Light Foundation)
+- **Goal**: Zero external dependencies (besides `reflect-metadata`).
+- **Content**:
+  - All public decorators (`@Controller`, `@Get`, `@Inject`, etc.).
+  - Component interfaces (`Guard`, `Pipe`, `Interceptor`).
+  - Standard HTTP exception classes.
+  - Lightweight Logger and Config interfaces.
+- **Performance**: Designed to be fully tree-shakable and safe for Edge/Cloudflare Workers.
 
-### Phase 2: Code Extraction (Sequential)
-1. **Extract `common`:** Move decorators, interfaces, and utils. Update imports.
-2. **Extract `core`:** Move the DI container and lifecycle logic.
-3. **Extract `platform-hono`:** Isolate Hono-specific routing.
-4. **Extract feature packages:** Move `swagger`, `websockets`, `config`, and `testing`.
+### 2. `@honestjs/core` (The High-Performance Engine)
+- **DI Container**: Async-first, singleton-optimized resolution.
+- **Application Engine**: Manages the bootstrap lifecycle and pre-computes the routing table.
+- **Scanner & Discovery**: Efficiently crawls the module graph to build the application state.
+- **Metadata Repository**: A fast, read-only snapshot of metadata used after bootstrap.
 
-### Phase 3: Build & CI Update
-1. **Build Orchestration:** Use Bun's build capabilities or a tool like `turborepo` for efficient cross-package builds.
-2. **CI Pipeline:** Update GitHub Actions to run tests across all packages in the workspace.
+### 3. `@honestjs/platform-hono` (The Bridge)
+- **Hono Adapter**: Translates framework-neutral pipeline executions into Hono middleware and handlers.
+- **Fast Path**: Ensures that the mapping from Hono `Context` to Controller parameters is direct and uses pre-calculated indices.
+
+### 4. `@honestjs/swagger`, `@honestjs/websockets`, `@honestjs/microservices`
+- **Optional Features**: These will remain as separate packages to ensure their dependencies (like `socket.io` or `swagger-ui`) don't bloat the core framework.
 
 ---
 
-## 🗺 Directory Mapping (Current -> New)
+## 🛠 Strategic Refinements
 
-| Current Path | Target Package |
-|--------------|----------------|
-| `src/di/` | `@honestjs/core/di` |
-| `src/decorators/` | `@honestjs/common/decorators` |
-| `src/interfaces/` | `@honestjs/common/interfaces` |
-| `src/managers/` | `@honestjs/core/managers` |
-| `src/registries/` | `@honestjs/core/registries` |
-| `src/swagger/` | `@honestjs/swagger` |
-| `src/websockets/` | `@honestjs/websockets` |
-| `src/testing/` | `@honestjs/testing` |
-| `src/cli/` | `@honestjs/cli` |
-| `src/application.ts` | `@honestjs/core` |
-| `src/utils/` | `@honestjs/common/utils` |
+### Pre-Compiled Handlers
+Instead of resolving guards/pipes at request time:
+```typescript
+// During Bootstrap:
+const chain = [
+  ...globalGuards,
+  ...controllerGuards,
+  ...handlerGuards
+];
+// We create a single "Hot Handler":
+const hotHandler = async (c) => {
+  for(const guard of chain) {
+    if (!await guard.canActivate(ctx)) return c.json({ error: 'Forbidden' }, 403);
+  }
+  const args = await resolveParams(c); // using pre-computed indices
+  return controller.method(...args);
+};
+hono.get(path, hotHandler);
+```
 
-## ✅ Success Criteria
-- [ ] Project builds successfully as a monorepo.
-- [ ] All 260 tests pass in the new structure.
-- [ ] Packages are correctly isolated with explicit dependencies in their `package.json`.
-- [ ] Users can import from `@honestjs/common` or `@honestjs/core` just like in NestJS.
+### Lightweight Execution Context
+We will avoid creating a heavy `ExecutionContext` object for every request. Instead, we will pass a recycled or minimal "Host" object that provides just enough metadata for guards and interceptors to function.
+
+### Optimized DI Access
+Singleton services will be resolved once and stored in a flat array/map for instant access during request-scoped resolution, minimizing the overhead of the DI container.
+
+---
+
+## 🗺 Directory Mapping
+
+| Current Path | Target Package | Status |
+|--------------|----------------|--------|
+| `src/di/` | `@honestjs/core/di` | Core Logic |
+| `src/decorators/` | `@honestjs/common/decorators` | Metadata Only |
+| `src/interfaces/` | `@honestjs/common/interfaces` | Shared Types |
+| `src/managers/` | `@honestjs/core/managers` | Execution Logic |
+| `src/registries/` | `@honestjs/core/registries` | Registry Logic |
+| `src/swagger/` | `@honestjs/swagger` | Plugin |
+| `src/websockets/` | `@honestjs/websockets` | Plugin |
+| `src/application.ts` | `@honestjs/core` | Entry Point |
+
+## ✅ Migration Checklist
+- [ ] Initialize Bun Workspace.
+- [ ] Extract `@honestjs/common` and verify it has no heavy dependencies.
+- [ ] Refactor `Application` to pre-compile route handlers.
+- [ ] Move Hono-specific logic to `@honestjs/platform-hono`.
+- [ ] Ensure all 260 tests pass with the new "Hot Path" execution.
