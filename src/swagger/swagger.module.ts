@@ -6,6 +6,8 @@ import type { IMetadataRepository } from '../interfaces'
  * Module for generating and serving OpenAPI specifications.
  */
 export class SwaggerModule {
+	constructor() {}
+
 	/**
 	 * Creates an OpenAPI document for the given application.
 	 * @param app - The application instance

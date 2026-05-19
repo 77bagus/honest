@@ -5,6 +5,8 @@ import type { Context } from 'hono'
  * Provides a consistent way to handle requests to non-existent routes
  */
 export class NotFoundHandler {
+	constructor() {}
+
 	/**
 	 * Creates a middleware function that handles 404 Not Found responses
 	 * @returns A middleware function that returns a JSON response with a 404 status

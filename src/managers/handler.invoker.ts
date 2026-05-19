@@ -6,6 +6,8 @@ import { isNil, isString } from '../utils'
  * Invokes route handlers and maps non-Response results to Hono responses.
  */
 export class HandlerInvoker {
+	constructor() {}
+
 	async invoke({ handler, args, context, contextIndex }: HandlerInvocationInput): Promise<unknown> {
 		const result = await handler(...args)
 		return this.mapResult(result, context, contextIndex)

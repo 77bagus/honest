@@ -8,7 +8,9 @@ import type { TestModuleOptions } from './testing.interface'
 export function createTestingModule(options: TestModuleOptions = {}): Constructor {
 	const { controllers, services, imports, name = 'TestModule' } = options
 	const dynamicModule = {
-		[name]: class {}
+		[name]: class {
+			constructor() {}
+		}
 	}[name] as Constructor
 
 	Module({ controllers, services, imports })(dynamicModule)

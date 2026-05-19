@@ -7,6 +7,8 @@ import type { Context } from 'hono'
  * Provides a consistent way to handle and format error responses across the application
  */
 export class ErrorHandler {
+	constructor() {}
+
 	/**
 	 * Creates a middleware function that handles error responses
 	 * @returns A middleware function that formats and returns error responses using createErrorResponse

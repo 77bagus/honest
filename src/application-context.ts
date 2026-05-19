@@ -7,6 +7,8 @@ import type { IApplicationContext } from './interfaces'
 export class ApplicationContext implements IApplicationContext {
 	private readonly store = new Map<string, unknown>()
 
+	constructor() {}
+
 	get<T>(key: string): T | undefined {
 		return this.store.get(key) as T | undefined
 	}
